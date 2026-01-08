@@ -631,7 +631,7 @@ export async function createNotificationsService(options = {}) {
       const subs = await loadSubscriptions()
       const targets = subs.filter((sub) => sub.targetPubKey === targetPubKey)
       if (targets.length === 0) {
-        return Response.json({ error: 'no subscriptions' }, { status: 404 })
+        return Response.json({ sent: 0, targetPubKey, warning: 'no subscriptions' })
       }
 
       let sent = 0

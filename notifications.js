@@ -50,7 +50,7 @@ export function notificationsButton(options = {}) {
     welcomeBody = 'Notifications are on.',
     goodbyeTitle = 'Goodbye',
     goodbyeBody = 'Notifications are off.',
-    storageKey = 'inproto:notifications:pubkey',
+    storageKey = 'inproto:notifications:binding',
     getUserPubKey,
     getTargetPubKey,
     signChallenge,
@@ -76,14 +76,21 @@ export function notificationsButton(options = {}) {
     if (onToggle) onToggle(enabled)
   }
 
-  function getStoredPubKey() {
-    return storageKey ? localStorage.getItem(storageKey) : null
+  function getStoredBinding() {
+    if (!storageKey) return null
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return null
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return null
+    }
   }
 
-  function setStoredPubKey(value) {
+  function setStoredBinding(value) {
     if (!storageKey) return
     if (value) {
-      localStorage.setItem(storageKey, value)
+      localStorage.setItem(storageKey, JSON.stringify(value))
     } else {
       localStorage.removeItem(storageKey)
     }
@@ -129,7 +136,12 @@ export function notificationsButton(options = {}) {
       const detail = await res.text().catch(() => '')
       throw new Error(detail ? `Subscribe failed: ${detail}` : 'Subscribe failed')
     }
-    if (userPubKey) setStoredPubKey(userPubKey)
+    if (userPubKey) {
+      setStoredBinding({
+        userPubKey,
+        targetPubKey: targetPubKey || null,
+      })
+    }
   }
 
   async function subscribe() {
@@ -180,7 +192,7 @@ export function notificationsButton(options = {}) {
 
     setStatus('unsubscribed')
     setState(false)
-    setStoredPubKey(null)
+    setStoredBinding(null)
     await showLocalNotification(goodbyeTitle, goodbyeBody, iconUrl)
   }
 
@@ -199,9 +211,10 @@ export function notificationsButton(options = {}) {
       return
     }
 
-    const storedPubKey = getStoredPubKey()
+    const stored = getStoredBinding()
     const currentPubKey = safeGetUserPubKey()
-    if (!currentPubKey || storedPubKey !== currentPubKey) {
+    const currentTarget = getTargetPubKey ? getTargetPubKey() : null
+    if (!currentPubKey || stored?.userPubKey !== currentPubKey) {
       try {
         await subscription.unsubscribe()
         await fetch(unsubscribeUrl, {
@@ -212,8 +225,14 @@ export function notificationsButton(options = {}) {
       } catch (err) {
         console.error(err)
       }
-      setStoredPubKey(null)
+      setStoredBinding(null)
       setStatus('not subscribed for this identity')
+      setState(false)
+      return
+    }
+
+    if (stored?.targetPubKey !== currentTarget) {
+      setStatus('not subscribed for this target')
       setState(false)
       return
     }

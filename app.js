@@ -177,6 +177,9 @@ function updateView() {
   qrContainer = null
   qrToggle.setAttribute('aria-expanded', 'false')
   renderSections([profileSection, pushSection])
+  if (pushButton?.refresh) {
+    pushButton.refresh().catch(() => {})
+  }
   loadProfileMessages(target).catch((err) => {
     console.error(err)
     setProfileMessagesStatus('failed to load messages')
