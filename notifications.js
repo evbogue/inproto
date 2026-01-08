@@ -50,6 +50,7 @@ export function notificationsButton(options = {}) {
     welcomeBody = 'Notifications are on.',
     goodbyeTitle = 'Goodbye',
     goodbyeBody = 'Notifications are off.',
+    storageKey = 'inproto:notifications:pubkey',
     getUserPubKey,
     getTargetPubKey,
     signChallenge,
@@ -75,22 +76,30 @@ export function notificationsButton(options = {}) {
     if (onToggle) onToggle(enabled)
   }
 
-  async function subscribe() {
-    setStatus('requesting permission')
-    const permission = await Notification.requestPermission()
-    if (permission !== 'granted') {
-      setStatus('permission denied')
-      return
+  function getStoredPubKey() {
+    return storageKey ? localStorage.getItem(storageKey) : null
+  }
+
+  function setStoredPubKey(value) {
+    if (!storageKey) return
+    if (value) {
+      localStorage.setItem(storageKey, value)
+    } else {
+      localStorage.removeItem(storageKey)
     }
+  }
 
-    const registration = await ensureServiceWorker(serviceWorkerUrl)
-    const key = await getPublicKey(vapidKeyUrl)
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(key),
-    })
+  function safeGetUserPubKey() {
+    if (!getUserPubKey) return null
+    try {
+      return getUserPubKey()
+    } catch {
+      return null
+    }
+  }
 
-    const userPubKey = getUserPubKey ? getUserPubKey() : null
+  async function sendSubscription(subscription) {
+    const userPubKey = safeGetUserPubKey()
     const targetPubKey = getTargetPubKey ? getTargetPubKey() : null
     let payload = subscription
     if (userPubKey) {
@@ -120,6 +129,26 @@ export function notificationsButton(options = {}) {
       const detail = await res.text().catch(() => '')
       throw new Error(detail ? `Subscribe failed: ${detail}` : 'Subscribe failed')
     }
+    if (userPubKey) setStoredPubKey(userPubKey)
+  }
+
+  async function subscribe() {
+    setStatus('requesting permission')
+    const permission = await Notification.requestPermission()
+    if (permission !== 'granted') {
+      setStatus('permission denied')
+      return
+    }
+
+    const registration = await ensureServiceWorker(serviceWorkerUrl)
+    const key = await getPublicKey(vapidKeyUrl)
+    const subscription = await registration.pushManager.getSubscription() ||
+      await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      })
+
+    await sendSubscription(subscription)
     setStatus('subscribed')
     setState(true)
     await showLocalNotification(welcomeTitle, welcomeBody, iconUrl)
@@ -151,6 +180,7 @@ export function notificationsButton(options = {}) {
 
     setStatus('unsubscribed')
     setState(false)
+    setStoredPubKey(null)
     await showLocalNotification(goodbyeTitle, goodbyeBody, iconUrl)
   }
 
@@ -164,7 +194,31 @@ export function notificationsButton(options = {}) {
     const subscription = registration
       ? await registration.pushManager.getSubscription()
       : null
-    setState(!!subscription)
+    if (!subscription) {
+      setState(false)
+      return
+    }
+
+    const storedPubKey = getStoredPubKey()
+    const currentPubKey = safeGetUserPubKey()
+    if (!currentPubKey || storedPubKey !== currentPubKey) {
+      try {
+        await subscription.unsubscribe()
+        await fetch(unsubscribeUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        })
+      } catch (err) {
+        console.error(err)
+      }
+      setStoredPubKey(null)
+      setStatus('not subscribed for this identity')
+      setState(false)
+      return
+    }
+
+    setState(true)
   }
 
   button.addEventListener('click', () => {

@@ -342,6 +342,9 @@ async function generateKeypair() {
     combinedKeyArea.value = combined
     setOwnPubkey(publicKey)
     setKeyStatus('ready (stored in localStorage)')
+    if (pushButton?.refresh) {
+      pushButton.refresh().catch(() => {})
+    }
     if (!hadKey) {
       window.location.hash = publicKey
       updateView()
@@ -361,6 +364,9 @@ clearButton.addEventListener('click', () => {
   combinedKeyArea.value = ''
   setOwnPubkey('no pubkey yet')
   setKeyStatus('cleared localStorage')
+  if (pushButton?.refresh) {
+    pushButton.refresh().catch(() => {})
+  }
 })
 sendPushButton.addEventListener('click', async () => {
   const targetPubKey = getTargetPubKey()
@@ -400,11 +406,14 @@ sendPushButton.addEventListener('click', async () => {
         body: payloadText,
       }),
     })
-    if (!res.ok) throw new Error('send failed')
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(detail ? `send failed: ${detail}` : 'send failed')
+    }
     sendStatus.textContent = 'sent'
   } catch (err) {
     console.error(err)
-    sendStatus.textContent = 'send failed'
+    sendStatus.textContent = err instanceof Error ? err.message : 'send failed'
   }
 })
 window.addEventListener('hashchange', updateView)
