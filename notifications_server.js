@@ -17,6 +17,7 @@ const DEFAULTS = {
   configFile: join(BASE_DIR, 'config.json'),
   vapidSubject: 'mailto:ops@wiredove.net',
   pushIconUrl: '/dovepurple_sm.png',
+  apdsCache: 'inproto',
 }
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
@@ -220,10 +221,12 @@ export async function createNotificationsService(options = {}) {
     configFile: Deno.env.get('VAPID_CONFIG_PATH') ?? DEFAULTS.configFile,
     vapidSubject: Deno.env.get('VAPID_SUBJECT') ?? DEFAULTS.vapidSubject,
     pushIconUrl: Deno.env.get('PUSH_ICON_URL') ?? DEFAULTS.pushIconUrl,
+    apdsCache: Deno.env.get('APDS_CACHE') ?? DEFAULTS.apdsCache,
     ...options,
   }
 
   await Deno.mkdir(settings.dataDir, { recursive: true })
+  await apds.start(settings.apdsCache)
 
   const config = await ensureVapidConfig(settings.configFile, settings.vapidSubject)
   webpush.setVapidDetails(
@@ -380,6 +383,102 @@ export async function createNotificationsService(options = {}) {
       return Response.json({ key: config.vapidPublicKey })
     }
 
+    if (req.method === 'GET' && url.pathname === '/peers') {
+      const pubkey = url.searchParams.get('pubkey')
+      if (!pubkey) {
+        return Response.json({ error: 'missing pubkey' }, { status: 400 })
+      }
+      const subs = await loadSubscriptions()
+      const peers = []
+      const seen = new Set()
+      for (const sub of subs) {
+        if (sub.userPubKey !== pubkey) continue
+        const target = typeof sub.targetPubKey === 'string'
+          ? sub.targetPubKey.trim()
+          : ''
+        if (!target || seen.has(target)) continue
+        seen.add(target)
+        peers.push(target)
+      }
+      return Response.json({ peers })
+    }
+
+    if (req.method === 'GET' && url.pathname === '/messages') {
+      const pubkey = url.searchParams.get('pubkey')
+      if (!pubkey) {
+        return Response.json({ error: 'missing pubkey' }, { status: 400 })
+      }
+      let log = []
+      try {
+        log = await apds.getOpenedLog()
+      } catch (err) {
+        console.error('apds getOpenedLog failed', err)
+        return Response.json({ error: 'apds unavailable' }, { status: 503 })
+      }
+
+      const messages = []
+      for (const entry of log) {
+        if (!entry || typeof entry.text !== 'string') continue
+        let parsed
+        try {
+          parsed = JSON.parse(entry.text)
+        } catch {
+          continue
+        }
+        if (parsed?.type !== 'dm') continue
+        if (parsed?.to !== pubkey) continue
+        messages.push({
+          hash: entry.hash,
+          sig: entry.sig,
+          author: entry.author,
+          ts: parsed.ts ?? entry.ts,
+          from: parsed.from ?? entry.author,
+          to: parsed.to,
+          body: parsed.body,
+        })
+      }
+
+      return Response.json({ messages })
+    }
+
+    if (req.method === 'GET' && url.pathname === '/messages/sent') {
+      const pubkey = url.searchParams.get('pubkey')
+      if (!pubkey) {
+        return Response.json({ error: 'missing pubkey' }, { status: 400 })
+      }
+      let log = []
+      try {
+        log = await apds.getOpenedLog()
+      } catch (err) {
+        console.error('apds getOpenedLog failed', err)
+        return Response.json({ error: 'apds unavailable' }, { status: 503 })
+      }
+
+      const messages = []
+      for (const entry of log) {
+        if (!entry || typeof entry.text !== 'string') continue
+        if (entry.author !== pubkey) continue
+        let parsed
+        try {
+          parsed = JSON.parse(entry.text)
+        } catch {
+          continue
+        }
+        if (parsed?.type !== 'dm') continue
+        messages.push({
+          hash: entry.hash,
+          sig: entry.sig,
+          author: entry.author,
+          ts: parsed.ts ?? entry.ts,
+          from: parsed.from ?? entry.author,
+          to: parsed.to,
+          body: parsed.body,
+        })
+      }
+
+      return Response.json({ messages })
+    }
+
     if (req.method === 'GET' && url.pathname === '/subscribe/challenge') {
       const pubkey = url.searchParams.get('pubkey')
       if (!pubkey) {
@@ -512,16 +611,20 @@ export async function createNotificationsService(options = {}) {
         return Response.json({ error: 'missing body' }, { status: 400 })
       }
 
-      const urlValue =
-        typeof messagePayload.url === 'string' && messagePayload.url.trim()
-          ? messagePayload.url.trim()
-          : `/#${targetPubKey}`
+      const urlValue = `/#${author}`
       const pushPayload = JSON.stringify({
         title,
         body: message,
         url: urlValue,
         icon: settings.pushIconUrl,
       })
+
+      try {
+        await apds.put(payloadHash, payloadText)
+        await apds.add(sig)
+      } catch (err) {
+        console.error('apds store failed', err)
+      }
 
       const subs = await loadSubscriptions()
       const targets = subs.filter((sub) => sub.targetPubKey === targetPubKey)

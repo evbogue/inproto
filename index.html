@@ -74,6 +74,8 @@
         font-size: 0.9rem;
         color: #444;
         margin-top: 8px;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .nav {
@@ -92,6 +94,50 @@
         align-items: center;
         justify-content: space-between;
         gap: 12px;
+      }
+
+      .peers-list {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0 0 0;
+        display: grid;
+        gap: 6px;
+      }
+
+      .peers-list a {
+        color: inherit;
+        text-decoration: underline;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .messages-list {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0 0 0;
+        display: grid;
+        gap: 10px;
+      }
+
+      .message-card {
+        border: 1px solid #1c1c1c;
+        background: #fff;
+        padding: 8px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .message-meta {
+        font-size: 0.85rem;
+        color: #333;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .message-body {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .icon-link {
@@ -157,6 +203,12 @@
         <a href="#key" aria-label="Key">
           <span class="material-symbols-outlined" aria-hidden="true">key</span>
         </a>
+        <a href="#peers" aria-label="Peers">
+          <span class="material-symbols-outlined" aria-hidden="true">group</span>
+        </a>
+        <a href="#inbox" aria-label="Inbox">
+          <span class="material-symbols-outlined" aria-hidden="true">inbox</span>
+        </a>
       </nav>
       <div id="route-root">
         <div id="key-section">
@@ -178,7 +230,24 @@
             <span class="material-symbols-outlined" aria-hidden="true">qr_code_2</span>
           </a>
         </div>
+        <div id="profile-messages">
+          <h2>Sent Messages</h2>
+          <div class="status" id="profile-messages-status"></div>
+          <ul class="messages-list" id="profile-messages-list"></ul>
+        </div>
       </div>
+
+        <div id="peers-section">
+          <h2>Peers</h2>
+          <div class="status" id="peers-status"></div>
+          <ul class="peers-list" id="peers-list"></ul>
+        </div>
+
+        <div id="inbox-section">
+          <h2>Inbox</h2>
+          <div class="status" id="inbox-status"></div>
+          <ul class="messages-list" id="inbox-list"></ul>
+        </div>
 
         <div id="push-section">
           <div class="status" id="target-status"></div>

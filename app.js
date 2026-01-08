@@ -16,6 +16,14 @@ const targetStatus = document.getElementById('target-status')
 const pushBodyInput = document.getElementById('push-body')
 const sendPushButton = document.getElementById('send-push')
 const sendStatus = document.getElementById('send-status')
+const peersSection = document.getElementById('peers-section')
+const peersStatus = document.getElementById('peers-status')
+const peersList = document.getElementById('peers-list')
+const profileMessagesStatus = document.getElementById('profile-messages-status')
+const profileMessagesList = document.getElementById('profile-messages-list')
+const inboxSection = document.getElementById('inbox-section')
+const inboxStatus = document.getElementById('inbox-status')
+const inboxList = document.getElementById('inbox-list')
 const storageKeys = {
   keypair: 'inproto:keypair',
   publicKey: 'inproto:publicKey',
@@ -93,6 +101,8 @@ function getRoute() {
   const hash = window.location.hash.replace(/^#/, '').trim()
   if (!hash) return { type: 'home' }
   if (hash === 'key') return { type: 'key' }
+  if (hash === 'peers') return { type: 'peers' }
+  if (hash === 'inbox') return { type: 'inbox' }
   return { type: 'profile', pubkey: hash }
 }
 
@@ -124,6 +134,32 @@ function updateView() {
     return
   }
 
+  if (route.type === 'peers') {
+    targetStatus.textContent = ''
+    if (qrContainer) qrContainer.remove()
+    qrContainer = null
+    qrToggle.setAttribute('aria-expanded', 'false')
+    renderSections([peersSection])
+    loadPeers().catch((err) => {
+      console.error(err)
+      setPeersStatus('failed to load peers')
+    })
+    return
+  }
+
+  if (route.type === 'inbox') {
+    targetStatus.textContent = ''
+    if (qrContainer) qrContainer.remove()
+    qrContainer = null
+    qrToggle.setAttribute('aria-expanded', 'false')
+    renderSections([inboxSection])
+    loadInbox().catch((err) => {
+      console.error(err)
+      setInboxStatus('failed to load inbox')
+    })
+    return
+  }
+
   const target = getTargetPubKey()
   if (!target) {
     targetStatus.textContent = 'no pubkey yet (generate one)'
@@ -141,6 +177,125 @@ function updateView() {
   qrContainer = null
   qrToggle.setAttribute('aria-expanded', 'false')
   renderSections([profileSection, pushSection])
+  loadProfileMessages(target).catch((err) => {
+    console.error(err)
+    setProfileMessagesStatus('failed to load messages')
+  })
+}
+
+function setPeersStatus(text) {
+  peersStatus.textContent = text
+}
+
+function setProfileMessagesStatus(text) {
+  profileMessagesStatus.textContent = text
+}
+
+function setInboxStatus(text) {
+  inboxStatus.textContent = text
+}
+
+function renderMessagesList(listEl, messages) {
+  listEl.replaceChildren()
+  for (const item of messages) {
+    const card = document.createElement('li')
+    card.className = 'message-card'
+    const meta = document.createElement('div')
+    meta.className = 'message-meta'
+    const tsValue = item.ts ?? ''
+    const tsNumber = Number(tsValue)
+    const ts = tsValue
+      ? new Date(Number.isFinite(tsNumber) ? tsNumber : tsValue).toLocaleString()
+      : 'unknown time'
+    const from = item.from || item.author || 'unknown'
+    const to = item.to || 'unknown'
+    meta.textContent = `${ts} • from ${from} • to ${to}`
+    const body = document.createElement('div')
+    body.className = 'message-body'
+    body.textContent = item.body || ''
+    card.appendChild(meta)
+    card.appendChild(body)
+    listEl.appendChild(card)
+  }
+}
+
+function renderPeersList(peers) {
+  peersList.replaceChildren()
+  for (const pubkey of peers) {
+    const item = document.createElement('li')
+    const link = document.createElement('a')
+    link.href = `#${pubkey}`
+    link.textContent = pubkey
+    item.appendChild(link)
+    peersList.appendChild(item)
+  }
+}
+
+async function loadPeers() {
+  const pubkey = getStoredPublicKey()
+  if (!pubkey) {
+    setPeersStatus('generate a keypair first')
+    renderPeersList([])
+    return
+  }
+
+  setPeersStatus('loading...')
+  const res = await fetch(`/peers?pubkey=${encodeURIComponent(pubkey)}`)
+  if (!res.ok) {
+    setPeersStatus('failed to load peers')
+    renderPeersList([])
+    return
+  }
+  const data = await res.json().catch(() => null)
+  const peers = Array.isArray(data?.peers) ? data.peers : []
+  if (peers.length === 0) {
+    setPeersStatus('no peers yet')
+  } else {
+    setPeersStatus('')
+  }
+  renderPeersList(peers)
+}
+
+async function loadProfileMessages(pubkey) {
+  setProfileMessagesStatus('loading...')
+  const res = await fetch(`/messages/sent?pubkey=${encodeURIComponent(pubkey)}`)
+  if (!res.ok) {
+    setProfileMessagesStatus('failed to load messages')
+    renderMessagesList(profileMessagesList, [])
+    return
+  }
+  const data = await res.json().catch(() => null)
+  const messages = Array.isArray(data?.messages) ? data.messages : []
+  if (messages.length === 0) {
+    setProfileMessagesStatus('no messages yet')
+  } else {
+    setProfileMessagesStatus('')
+  }
+  renderMessagesList(profileMessagesList, messages)
+}
+
+async function loadInbox() {
+  const pubkey = getStoredPublicKey()
+  if (!pubkey) {
+    setInboxStatus('generate a keypair first')
+    renderMessagesList(inboxList, [])
+    return
+  }
+  setInboxStatus('loading...')
+  const res = await fetch(`/messages?pubkey=${encodeURIComponent(pubkey)}`)
+  if (!res.ok) {
+    setInboxStatus('failed to load inbox')
+    renderMessagesList(inboxList, [])
+    return
+  }
+  const data = await res.json().catch(() => null)
+  const messages = Array.isArray(data?.messages) ? data.messages : []
+  if (messages.length === 0) {
+    setInboxStatus('no messages yet')
+  } else {
+    setInboxStatus('')
+  }
+  renderMessagesList(inboxList, messages)
 }
 
 function loadStoredKeys() {
@@ -217,7 +372,7 @@ sendPushButton.addEventListener('click', async () => {
       to: targetPubKey,
       ts: Date.now(),
       body,
-      url: buildShareUrl(targetPubKey),
+      url: buildShareUrl(fromPubKey),
     }
     const payloadText = JSON.stringify(payload)
     const hash = await an.hash(payloadText)
