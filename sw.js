@@ -112,11 +112,11 @@ self.addEventListener('push', (event) => {
 
     const message = decryptPayload(payload, curveSecret)
     if (!message || typeof message !== 'object') return
+    if (typeof message.body !== 'string' || !message.body.trim()) return
 
-    const title = message.from
-      ? `Message from ${message.from.substring(0, 10)}`
-      : 'Inproto'
-    const body = typeof message.body === 'string' ? message.body : 'New message'
+    const senderPubkey = typeof message.from === 'string' ? message.from : payload.from
+    const title = senderPubkey || 'Inproto'
+    const body = message.body
     const targetUrl = typeof message.url === 'string' ? message.url : '/'
     const options = {
       body,

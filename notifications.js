@@ -63,7 +63,12 @@ export function notificationsButton(options = {}) {
   button.type = 'button'
   button.className = className
   button.title = titleOff
-  button.textContent = titleOff
+  button.setAttribute('aria-label', titleOff)
+
+  const icon = document.createElement('span')
+  icon.className = 'material-symbols-outlined'
+  icon.setAttribute('aria-hidden', 'true')
+  button.appendChild(icon)
 
   function setStatus(text) {
     if (onStatus) onStatus(text)
@@ -73,7 +78,8 @@ export function notificationsButton(options = {}) {
     button.dataset.enabled = enabled ? 'true' : 'false'
     const title = enabled ? titleOn : titleOff
     button.title = title
-    button.textContent = title
+    button.setAttribute('aria-label', title)
+    icon.textContent = enabled ? iconOn : iconOff
     if (onToggle) onToggle(enabled)
   }
 

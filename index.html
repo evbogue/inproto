@@ -219,6 +219,11 @@
       </nav>
       <div id="route-root">
         <div id="key-section">
+          <div class="row">
+            <span class="material-symbols-outlined" aria-hidden="true">key</span>
+            <div id="notifications-controls"></div>
+          </div>
+          <div class="status" id="notifications-status"></div>
           <div class="status">
             <span id="own-pubkey"></span>
           </div>
@@ -253,7 +258,6 @@
 
         <div id="push-section">
           <div class="status" id="target-status"></div>
-          <div id="push-controls"></div>
           <textarea id="push-body" placeholder="send a message"></textarea>
           <button id="send-push" type="button">Push</button>
           <div class="status" id="send-status"></div>

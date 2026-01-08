@@ -563,8 +563,12 @@ qrToggle.addEventListener('click', (event) => {
 loadStoredKeys()
 updateView()
 
-const pushMount = document.getElementById('push-controls')
+const pushMount = document.getElementById('notifications-controls')
+const notificationsStatus = document.getElementById('notifications-status')
 pushButton = notificationsButton({
+  className: 'icon-link',
+  iconOn: 'notifications_active',
+  iconOff: 'notifications',
   serviceWorkerUrl: '/sw.js',
   vapidKeyUrl: '/vapid-public-key',
   subscribeUrl: '/subscribe',
@@ -585,6 +589,9 @@ pushButton = notificationsButton({
   welcomeBody: 'Notifications are on.',
   goodbyeTitle: 'Notifications off',
   goodbyeBody: 'Notifications are off.',
+  onStatus: (text) => {
+    if (notificationsStatus) notificationsStatus.textContent = text || ''
+  },
 })
 
 pushMount.appendChild(pushButton)
