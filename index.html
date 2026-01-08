@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>anproto-in</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Inter", system-ui, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #ccc;
+        color: #151515;
+        font-size: 16px;
+        line-height: 1.4;
+      }
+
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        display: grid;
+        gap: 0;
+      }
+
+      h1,
+      h2 {
+        margin: 0 0 12px 0;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      label {
+        display: block;
+        margin: 12px 0 4px 0;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        font: inherit;
+        font-size: 1em;
+        line-height: inherit;
+        padding: 6px;
+        border: 1px solid #1c1c1c;
+        background: #fff;
+        box-sizing: border-box;
+      }
+
+      textarea {
+        min-height: 72px;
+        resize: vertical;
+      }
+
+      .status {
+        font-size: 0.9rem;
+        color: #444;
+        margin-top: 8px;
+      }
+
+      .nav {
+        display: flex;
+        gap: 12px;
+        margin: 0;
+      }
+
+      .nav a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .profile-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .icon-link {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .icon-link .material-symbols-outlined {
+        font-size: 28px;
+      }
+
+      #route-root {
+        visibility: hidden;
+      }
+
+      #route-root.ready {
+        visibility: visible;
+      }
+
+      .route-view {
+        animation: fade-in 140ms ease-out;
+      }
+
+      #qr-container {
+        margin-top: 12px;
+        padding: 8px;
+        border: 1px solid #1c1c1c;
+        background: #fff;
+        display: inline-block;
+      }
+
+      #qr-canvas {
+        display: block;
+        width: 200px;
+        height: 200px;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(2px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="nav">
+        <a href="#" aria-label="Home">
+          <span class="material-symbols-outlined" aria-hidden="true">home</span>
+        </a>
+        <a href="#key" aria-label="Key">
+          <span class="material-symbols-outlined" aria-hidden="true">key</span>
+        </a>
+      </nav>
+      <div id="route-root">
+        <div id="key-section">
+          <div class="status">
+            <span id="own-pubkey"></span>
+          </div>
+          <textarea id="combined-key" readonly></textarea>
+          <div class="row">
+            <button id="generate" type="button">Generate</button>
+            <button id="clear-keys" type="button">Delete</button>
+          </div>
+        <div class="status" id="key-status"></div>
+      </div>
+
+      <div id="profile-section">
+        <div class="profile-header">
+          <div class="status"><span id="profile-pubkey"></span></div>
+          <a id="qr-toggle" class="icon-link" href="#" aria-expanded="false" aria-label="Show QR code">
+            <span class="material-symbols-outlined" aria-hidden="true">qr_code_2</span>
+          </a>
+        </div>
+      </div>
+
+        <div id="push-section">
+          <div class="status" id="target-status"></div>
+          <div id="push-controls"></div>
+          <textarea id="push-body" placeholder="send a message"></textarea>
+          <button id="send-push" type="button">Push</button>
+          <div class="status" id="send-status"></div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
