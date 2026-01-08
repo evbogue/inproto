@@ -134,6 +134,13 @@
         word-break: break-word;
       }
 
+      .message-meta .meta-label {
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-size: 0.72rem;
+        color: #555;
+      }
+
       .message-body {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
@@ -230,11 +237,6 @@
             <span class="material-symbols-outlined" aria-hidden="true">qr_code_2</span>
           </a>
         </div>
-        <div id="profile-messages">
-          <h2>Sent Messages</h2>
-          <div class="status" id="profile-messages-status"></div>
-          <ul class="messages-list" id="profile-messages-list"></ul>
-        </div>
       </div>
 
         <div id="peers-section">
@@ -255,6 +257,12 @@
           <textarea id="push-body" placeholder="send a message"></textarea>
           <button id="send-push" type="button">Push</button>
           <div class="status" id="send-status"></div>
+        </div>
+
+        <div id="profile-messages">
+          <h2>Sent Messages</h2>
+          <div class="status" id="profile-messages-status"></div>
+          <ul class="messages-list" id="profile-messages-list"></ul>
         </div>
       </div>
     </main>

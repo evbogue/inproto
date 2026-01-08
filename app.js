@@ -202,14 +202,29 @@ function renderMessagesList(listEl, messages) {
     card.className = 'message-card'
     const meta = document.createElement('div')
     meta.className = 'message-meta'
-    const tsValue = item.ts ?? ''
-    const tsNumber = Number(tsValue)
-    const ts = tsValue
-      ? new Date(Number.isFinite(tsNumber) ? tsNumber : tsValue).toLocaleString()
-      : 'unknown time'
+    const ts = item.human ? `${item.human} ago` : 'unknown time'
     const from = item.from || item.author || 'unknown'
     const to = item.to || 'unknown'
-    meta.textContent = `${ts} • from ${from} • to ${to}`
+    const metaLine1 = document.createElement('div')
+    const metaLine1Prefix = document.createElement('span')
+    metaLine1Prefix.className = 'meta-label'
+    metaLine1Prefix.textContent = `${ts} • from `
+    const fromLink = document.createElement('a')
+    fromLink.href = from !== 'unknown' ? `#${from}` : '#'
+    fromLink.textContent = from
+    metaLine1.appendChild(metaLine1Prefix)
+    metaLine1.appendChild(fromLink)
+    const metaLine2 = document.createElement('div')
+    const metaLine2Prefix = document.createElement('span')
+    metaLine2Prefix.className = 'meta-label'
+    metaLine2Prefix.textContent = 'to '
+    const toLink = document.createElement('a')
+    toLink.href = to !== 'unknown' ? `#${to}` : '#'
+    toLink.textContent = to
+    metaLine2.appendChild(metaLine2Prefix)
+    metaLine2.appendChild(toLink)
+    meta.appendChild(metaLine1)
+    meta.appendChild(metaLine2)
     const body = document.createElement('div')
     body.className = 'message-body'
     body.textContent = item.body || ''
