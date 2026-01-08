@@ -594,4 +594,4 @@ pushButton = notificationsButton({
   },
 })
 
-pushMount.appendChild(pushButton)
+if (pushMount) pushMount.appendChild(pushButton)
