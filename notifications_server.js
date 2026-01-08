@@ -1,9 +1,7 @@
 import webpush from 'npm:web-push@3.6.7'
-import { apds } from 'https://esm.sh/gh/evbogue/apds@d9326cb/apds.js'
 import { dirname, fromFileUrl, join } from 'https://deno.land/std@0.224.0/path/mod.ts'
 import nacl from './lib/nacl-fast-es.js'
 import { decode } from './lib/base64.js'
-import { an } from './an.js'
 
 const BASE_DIR = dirname(fromFileUrl(import.meta.url))
 const DATA_DIR = join(BASE_DIR, 'data')
@@ -17,7 +15,7 @@ const DEFAULTS = {
   configFile: join(BASE_DIR, 'config.json'),
   vapidSubject: 'mailto:ops@wiredove.net',
   pushIconUrl: '/dovepurple_sm.png',
-  apdsCache: 'inproto',
+  maxMessages: 1000,
 }
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
@@ -142,24 +140,11 @@ async function parsePostText(text) {
 
   let name
   let yamlBody
-  try {
-    const parsed = await apds.parseYaml(raw)
-    if (parsed && typeof parsed === 'object') {
-      name = typeof parsed.name === 'string' ? parsed.name.trim() : undefined
-      yamlBody = typeof parsed.body === 'string' ? parsed.body.trim() : undefined
-    }
-  } catch {
-    if (yamlBlock) {
-      try {
-        const parsed = await apds.parseYaml(yamlBlock)
-        if (parsed && typeof parsed === 'object') {
-          name = typeof parsed.name === 'string' ? parsed.name.trim() : undefined
-          yamlBody = typeof parsed.body === 'string' ? parsed.body.trim() : undefined
-        }
-      } catch {
-        // Fall back to raw body if YAML parsing fails.
-      }
-    }
+  if (yamlBlock) {
+    const nameMatch = yamlBlock.match(/^name:\s*(.+)$/m)
+    if (nameMatch) name = nameMatch[1].trim()
+    const bodyMatch = yamlBlock.match(/^body:\s*([\s\S]*)$/m)
+    if (bodyMatch) yamlBody = bodyMatch[1].trim()
   }
 
   const body = bodyText.trim() || (yamlBody || '').trim()
@@ -212,6 +197,7 @@ function summarizeLatest(record) {
 }
 
 export async function createNotificationsService(options = {}) {
+  const maxMessagesEnv = Number(Deno.env.get('MAX_MESSAGES'))
   const settings = {
     latestUrl: Deno.env.get('LATEST_URL') ?? DEFAULTS.latestUrl,
     pollMs: Number(Deno.env.get('POLL_MS') ?? DEFAULTS.pollMs),
@@ -221,12 +207,11 @@ export async function createNotificationsService(options = {}) {
     configFile: Deno.env.get('VAPID_CONFIG_PATH') ?? DEFAULTS.configFile,
     vapidSubject: Deno.env.get('VAPID_SUBJECT') ?? DEFAULTS.vapidSubject,
     pushIconUrl: Deno.env.get('PUSH_ICON_URL') ?? DEFAULTS.pushIconUrl,
-    apdsCache: Deno.env.get('APDS_CACHE') ?? DEFAULTS.apdsCache,
+    maxMessages: Number.isFinite(maxMessagesEnv) ? maxMessagesEnv : DEFAULTS.maxMessages,
     ...options,
   }
 
   await Deno.mkdir(settings.dataDir, { recursive: true })
-  await apds.start(settings.apdsCache)
 
   const config = await ensureVapidConfig(settings.configFile, settings.vapidSubject)
   webpush.setVapidDetails(
@@ -249,6 +234,19 @@ export async function createNotificationsService(options = {}) {
 
   async function saveState(state) {
     await writeJsonFile(settings.stateFile, state)
+  }
+
+  const messageLog = []
+  function storeMessage(message) {
+    messageLog.push(message)
+    if (messageLog.length > settings.maxMessages) {
+      messageLog.splice(0, messageLog.length - settings.maxMessages)
+    }
+  }
+
+  function getMessages(filter) {
+    if (!filter) return [...messageLog]
+    return messageLog.filter(filter)
   }
 
   async function pollLatest(force = false) {
@@ -404,42 +402,7 @@ export async function createNotificationsService(options = {}) {
     }
 
     if (req.method === 'GET' && url.pathname === '/messages') {
-      const pubkey = url.searchParams.get('pubkey')
-      if (!pubkey) {
-        return Response.json({ error: 'missing pubkey' }, { status: 400 })
-      }
-      let log = []
-      try {
-        log = await apds.getOpenedLog()
-      } catch (err) {
-        console.error('apds getOpenedLog failed', err)
-        return Response.json({ error: 'apds unavailable' }, { status: 503 })
-      }
-
-      const messages = []
-      for (const entry of log) {
-        if (!entry || typeof entry.text !== 'string') continue
-        let parsed
-        try {
-          parsed = JSON.parse(entry.text)
-        } catch {
-          continue
-        }
-        if (parsed?.type !== 'dm') continue
-        if (parsed?.to !== pubkey) continue
-        messages.push({
-          hash: entry.hash,
-          sig: entry.sig,
-          author: entry.author,
-          ts: parsed.ts ?? entry.ts,
-          human: await apds.human(parsed.ts ?? entry.ts),
-          from: parsed.from ?? entry.author,
-          to: parsed.to,
-          body: parsed.body,
-        })
-      }
-
-      return Response.json({ messages })
+      return Response.json({ messages: getMessages() })
     }
 
     if (req.method === 'GET' && url.pathname === '/messages/sent') {
@@ -447,38 +410,9 @@ export async function createNotificationsService(options = {}) {
       if (!pubkey) {
         return Response.json({ error: 'missing pubkey' }, { status: 400 })
       }
-      let log = []
-      try {
-        log = await apds.getOpenedLog()
-      } catch (err) {
-        console.error('apds getOpenedLog failed', err)
-        return Response.json({ error: 'apds unavailable' }, { status: 503 })
-      }
-
-      const messages = []
-      for (const entry of log) {
-        if (!entry || typeof entry.text !== 'string') continue
-        if (entry.author !== pubkey) continue
-        let parsed
-        try {
-          parsed = JSON.parse(entry.text)
-        } catch {
-          continue
-        }
-        if (parsed?.type !== 'dm') continue
-        messages.push({
-          hash: entry.hash,
-          sig: entry.sig,
-          author: entry.author,
-          ts: parsed.ts ?? entry.ts,
-          human: await apds.human(parsed.ts ?? entry.ts),
-          from: parsed.from ?? entry.author,
-          to: parsed.to,
-          body: parsed.body,
-        })
-      }
-
-      return Response.json({ messages })
+      return Response.json({
+        messages: getMessages((item) => item.from === pubkey),
+      })
     }
 
     if (req.method === 'GET' && url.pathname === '/subscribe/challenge') {
@@ -572,78 +506,46 @@ export async function createNotificationsService(options = {}) {
       if (!body || typeof body !== 'object') {
         return Response.json({ error: 'invalid payload' }, { status: 400 })
       }
-
-      const sig = typeof body.sig === 'string' ? body.sig : ''
-      const payloadText = typeof body.body === 'string' ? body.body : ''
-      if (!sig || !payloadText) {
-        return Response.json({ error: 'missing sig or body' }, { status: 400 })
+      const from = typeof body.from === 'string' ? body.from.trim() : ''
+      const boxes = Array.isArray(body.boxes) ? body.boxes : []
+      if (!from || boxes.length === 0) {
+        return Response.json({ error: 'missing from or boxes' }, { status: 400 })
+      }
+      const cleanBoxes = boxes
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null
+          const nonce = typeof entry.nonce === 'string' ? entry.nonce : ''
+          const box = typeof entry.box === 'string' ? entry.box : ''
+          if (!nonce || !box) return null
+          return { nonce, box }
+        })
+        .filter((entry) => entry)
+      if (cleanBoxes.length === 0) {
+        return Response.json({ error: 'invalid boxes' }, { status: 400 })
       }
 
-      const opened = await an.open(sig)
-      if (!opened) {
-        return Response.json({ error: 'invalid signature' }, { status: 400 })
+      const receivedAt = Date.now()
+      const storedMessage = {
+        from,
+        boxes: cleanBoxes,
+        receivedAt,
       }
-      const expectedHash = opened.substring(13)
-      const payloadHash = await an.hash(payloadText)
-      if (expectedHash !== payloadHash) {
-        return Response.json({ error: 'hash mismatch' }, { status: 400 })
-      }
+      storeMessage(storedMessage)
 
-      let messagePayload
-      try {
-        messagePayload = JSON.parse(payloadText)
-      } catch {
-        return Response.json({ error: 'invalid body json' }, { status: 400 })
-      }
-
-      const author = sig.substring(0, 44)
-      if (messagePayload.from && messagePayload.from !== author) {
-        return Response.json({ error: 'author mismatch' }, { status: 400 })
-      }
-
-      const targetPubKey = messagePayload.to
-      if (!targetPubKey) {
-        return Response.json({ error: 'missing target' }, { status: 400 })
-      }
-
-      const title = author
-      const message =
-        typeof messagePayload.body === 'string' ? messagePayload.body : ''
-      if (!message.trim()) {
-        return Response.json({ error: 'missing body' }, { status: 400 })
-      }
-
-      const urlValue = `/#${author}`
       const pushPayload = JSON.stringify({
-        title,
-        body: message,
-        url: urlValue,
+        type: 'dm',
+        from,
+        boxes: cleanBoxes,
         icon: settings.pushIconUrl,
+        receivedAt,
       })
 
-      try {
-        await apds.put(payloadHash, payloadText)
-        await apds.add(sig)
-      } catch (err) {
-        console.error('apds store failed', err)
-      }
-
       const subs = await loadSubscriptions()
-      const targets = subs.filter((sub) => sub.targetPubKey === targetPubKey)
-      if (targets.length === 0) {
-        return Response.json({ sent: 0, targetPubKey, warning: 'no subscriptions' })
-      }
-
       let sent = 0
       const now = new Date().toISOString()
       const nextSubs = []
 
       for (const sub of subs) {
-        if (sub.targetPubKey !== targetPubKey) {
-          nextSubs.push(sub)
-          continue
-        }
-
         try {
           await webpush.sendNotification(
             {
@@ -666,7 +568,7 @@ export async function createNotificationsService(options = {}) {
       }
 
       await saveSubscriptions(nextSubs)
-      return Response.json({ sent, targetPubKey })
+      return Response.json({ sent })
     }
 
     return null

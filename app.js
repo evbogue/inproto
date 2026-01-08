@@ -1,5 +1,8 @@
 import { an } from './an.js'
 import { notificationsButton } from './notifications.js'
+import nacl from './lib/nacl-fast-es.js'
+import { decode, encode } from './lib/base64.js'
+import { convertPublicKey, convertSecretKey } from './lib/ed2curve.js'
 
 const generateButton = document.getElementById('generate')
 const clearButton = document.getElementById('clear-keys')
@@ -21,9 +24,11 @@ const peersStatus = document.getElementById('peers-status')
 const peersList = document.getElementById('peers-list')
 const profileMessagesStatus = document.getElementById('profile-messages-status')
 const profileMessagesList = document.getElementById('profile-messages-list')
+const profileMessagesSection = document.getElementById('profile-messages')
 const inboxSection = document.getElementById('inbox-section')
 const inboxStatus = document.getElementById('inbox-status')
 const inboxList = document.getElementById('inbox-list')
+let pushButton = null
 const storageKeys = {
   keypair: 'inproto:keypair',
   publicKey: 'inproto:publicKey',
@@ -32,6 +37,8 @@ const legacyStorageKeys = {
   keypair: 'anproto:keypair',
   publicKey: 'anproto:publicKey',
 }
+const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
 
 function setKeyStatus(text) {
   keyStatus.textContent = text
@@ -52,6 +59,70 @@ function getStoredPublicKey() {
   return localStorage.getItem(storageKeys.publicKey) ||
     localStorage.getItem(legacyStorageKeys.publicKey) ||
     combined.slice(0, 44)
+}
+
+function getEdSecretKeyBytes() {
+  const combined = getStoredKeypair()
+  if (!combined) return null
+  try {
+    return decode(combined.slice(44))
+  } catch {
+    return null
+  }
+}
+
+function getCurveSecretKey() {
+  const secret = getEdSecretKeyBytes()
+  if (!secret) return null
+  return convertSecretKey(secret)
+}
+
+function getCurvePublicKey(pubkey) {
+  if (!pubkey) return null
+  try {
+    const edBytes = decode(pubkey)
+    return convertPublicKey(edBytes)
+  } catch {
+    return null
+  }
+}
+
+async function syncServiceWorkerKey() {
+  if (!('serviceWorker' in navigator)) return
+  const registration = await navigator.serviceWorker.ready.catch(() => null)
+  if (!registration?.active) return
+  const pubkey = getStoredPublicKey()
+  const curveSecret = getCurveSecretKey()
+  if (!pubkey || !curveSecret) {
+    registration.active.postMessage({ type: 'inproto:clear-key' })
+    return
+  }
+  registration.active.postMessage({
+    type: 'inproto:set-key',
+    pubkey,
+    curveSecret: encode(curveSecret),
+  })
+}
+
+function formatRelativeTime(tsValue) {
+  const ts = Number(tsValue)
+  if (!Number.isFinite(ts)) return 'unknown time'
+  let diff = Math.max(0, Date.now() - ts)
+  const seconds = Math.round(diff / 1000)
+  if (seconds < 5) return 'just now'
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.round(hours / 24)
+  if (days < 7) return `${days}d`
+  const weeks = Math.round(days / 7)
+  if (weeks < 5) return `${weeks}w`
+  const months = Math.round(days / 30)
+  if (months < 12) return `${months}mo`
+  const years = Math.round(days / 365)
+  return `${years}y`
 }
 
 function buildShareUrl(pubkey) {
@@ -176,7 +247,7 @@ function updateView() {
   if (qrContainer) qrContainer.remove()
   qrContainer = null
   qrToggle.setAttribute('aria-expanded', 'false')
-  renderSections([profileSection, pushSection])
+  renderSections([profileSection, pushSection, profileMessagesSection])
   if (pushButton?.refresh) {
     pushButton.refresh().catch(() => {})
   }
@@ -205,7 +276,7 @@ function renderMessagesList(listEl, messages) {
     card.className = 'message-card'
     const meta = document.createElement('div')
     meta.className = 'message-meta'
-    const ts = item.human ? `${item.human} ago` : 'unknown time'
+    const ts = item.ts ? `${formatRelativeTime(item.ts)} ago` : 'unknown time'
     const from = item.from || item.author || 'unknown'
     const to = item.to || 'unknown'
     const metaLine1 = document.createElement('div')
@@ -237,6 +308,50 @@ function renderMessagesList(listEl, messages) {
   }
 }
 
+function encryptMessage(messageText, recipientPubKey) {
+  const curveSecret = getCurveSecretKey()
+  const recipientCurve = getCurvePublicKey(recipientPubKey)
+  if (!curveSecret || !recipientCurve) return null
+  const nonce = nacl.randomBytes(24)
+  const boxed = nacl.box(textEncoder.encode(messageText), nonce, recipientCurve, curveSecret)
+  return { nonce: encode(nonce), box: encode(boxed) }
+}
+
+function decryptEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') return null
+  const curveSecret = getCurveSecretKey()
+  if (!curveSecret) return null
+  const senderCurve = getCurvePublicKey(envelope.from)
+  if (!senderCurve) return null
+  const boxes = Array.isArray(envelope.boxes) ? envelope.boxes : []
+  for (const entry of boxes) {
+    if (!entry || typeof entry !== 'object') continue
+    try {
+      const nonce = decode(entry.nonce)
+      const box = decode(entry.box)
+      const opened = nacl.box.open(box, nonce, senderCurve, curveSecret)
+      if (!opened) continue
+      const text = textDecoder.decode(opened)
+      const parsed = JSON.parse(text)
+      return {
+        ...parsed,
+        from: parsed.from || envelope.from,
+        receivedAt: envelope.receivedAt,
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+async function fetchEncryptedMessages(url = '/messages') {
+  const res = await fetch(url)
+  if (!res.ok) return []
+  const data = await res.json().catch(() => null)
+  return Array.isArray(data?.messages) ? data.messages : []
+}
+
 function renderPeersList(peers) {
   peersList.replaceChildren()
   for (const pubkey of peers) {
@@ -258,32 +373,34 @@ async function loadPeers() {
   }
 
   setPeersStatus('loading...')
-  const res = await fetch(`/peers?pubkey=${encodeURIComponent(pubkey)}`)
-  if (!res.ok) {
-    setPeersStatus('failed to load peers')
-    renderPeersList([])
-    return
+  const encrypted = await fetchEncryptedMessages()
+  const peers = new Set()
+  for (const envelope of encrypted) {
+    const decrypted = decryptEnvelope(envelope)
+    if (!decrypted) continue
+    if (decrypted.from) peers.add(decrypted.from)
+    if (decrypted.to) peers.add(decrypted.to)
   }
-  const data = await res.json().catch(() => null)
-  const peers = Array.isArray(data?.peers) ? data.peers : []
-  if (peers.length === 0) {
+  peers.delete(pubkey)
+  const list = Array.from(peers)
+  if (list.length === 0) {
     setPeersStatus('no peers yet')
   } else {
     setPeersStatus('')
   }
-  renderPeersList(peers)
+  renderPeersList(list)
 }
 
 async function loadProfileMessages(pubkey) {
   setProfileMessagesStatus('loading...')
-  const res = await fetch(`/messages/sent?pubkey=${encodeURIComponent(pubkey)}`)
-  if (!res.ok) {
-    setProfileMessagesStatus('failed to load messages')
-    renderMessagesList(profileMessagesList, [])
-    return
+  const encrypted = await fetchEncryptedMessages(`/messages/sent?pubkey=${encodeURIComponent(pubkey)}`)
+  const messages = []
+  for (const envelope of encrypted) {
+    const decrypted = decryptEnvelope(envelope)
+    if (!decrypted) continue
+    if (decrypted.from !== pubkey) continue
+    messages.push(decrypted)
   }
-  const data = await res.json().catch(() => null)
-  const messages = Array.isArray(data?.messages) ? data.messages : []
   if (messages.length === 0) {
     setProfileMessagesStatus('no messages yet')
   } else {
@@ -300,14 +417,14 @@ async function loadInbox() {
     return
   }
   setInboxStatus('loading...')
-  const res = await fetch(`/messages?pubkey=${encodeURIComponent(pubkey)}`)
-  if (!res.ok) {
-    setInboxStatus('failed to load inbox')
-    renderMessagesList(inboxList, [])
-    return
+  const encrypted = await fetchEncryptedMessages()
+  const messages = []
+  for (const envelope of encrypted) {
+    const decrypted = decryptEnvelope(envelope)
+    if (!decrypted) continue
+    if (decrypted.to !== pubkey) continue
+    messages.push(decrypted)
   }
-  const data = await res.json().catch(() => null)
-  const messages = Array.isArray(data?.messages) ? data.messages : []
   if (messages.length === 0) {
     setInboxStatus('no messages yet')
   } else {
@@ -320,11 +437,13 @@ function loadStoredKeys() {
   const combined = getStoredKeypair()
   if (!combined) {
     setOwnPubkey('no pubkey yet')
+    syncServiceWorkerKey().catch(() => {})
     return
   }
   const publicKey = getStoredPublicKey()
   if (!publicKey) {
     setOwnPubkey('no pubkey yet')
+    syncServiceWorkerKey().catch(() => {})
     return
   }
   localStorage.setItem(storageKeys.keypair, combined)
@@ -332,6 +451,7 @@ function loadStoredKeys() {
   combinedKeyArea.value = combined
   setOwnPubkey(publicKey)
   setKeyStatus('loaded from localStorage')
+  syncServiceWorkerKey().catch(() => {})
 }
 
 async function generateKeypair() {
@@ -348,6 +468,7 @@ async function generateKeypair() {
     if (pushButton?.refresh) {
       pushButton.refresh().catch(() => {})
     }
+    syncServiceWorkerKey().catch(() => {})
     if (!hadKey) {
       window.location.hash = publicKey
       updateView()
@@ -370,6 +491,7 @@ clearButton.addEventListener('click', () => {
   if (pushButton?.refresh) {
     pushButton.refresh().catch(() => {})
   }
+  syncServiceWorkerKey().catch(() => {})
 })
 sendPushButton.addEventListener('click', async () => {
   const targetPubKey = getTargetPubKey()
@@ -377,9 +499,9 @@ sendPushButton.addEventListener('click', async () => {
     sendStatus.textContent = 'no target pubkey set'
     return
   }
-  const combined = getStoredKeypair()
   const fromPubKey = getStoredPublicKey()
-  if (!combined || !fromPubKey) {
+  const curveSecret = getCurveSecretKey()
+  if (!fromPubKey || !curveSecret) {
     sendStatus.textContent = 'generate a keypair first'
     return
   }
@@ -399,14 +521,17 @@ sendPushButton.addEventListener('click', async () => {
       url: buildShareUrl(fromPubKey),
     }
     const payloadText = JSON.stringify(payload)
-    const hash = await an.hash(payloadText)
-    const sig = await an.sign(hash, combined)
+    const targetBox = encryptMessage(payloadText, targetPubKey)
+    const selfBox = encryptMessage(payloadText, fromPubKey)
+    if (!targetBox || !selfBox) {
+      throw new Error('send failed: encryption error')
+    }
     const res = await fetch('/message', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        sig,
-        body: payloadText,
+        from: fromPubKey,
+        boxes: [targetBox, selfBox],
       }),
     })
     if (!res.ok) {
@@ -439,7 +564,7 @@ loadStoredKeys()
 updateView()
 
 const pushMount = document.getElementById('push-controls')
-const pushButton = notificationsButton({
+pushButton = notificationsButton({
   serviceWorkerUrl: '/sw.js',
   vapidKeyUrl: '/vapid-public-key',
   subscribeUrl: '/subscribe',
@@ -451,7 +576,6 @@ const pushButton = notificationsButton({
     if (!publicKey) throw new Error('Generate a keypair first')
     return publicKey
   },
-  getTargetPubKey: () => getTargetPubKey(),
   signChallenge: async (challenge) => {
     const combined = getStoredKeypair()
     if (!combined) throw new Error('Generate a keypair first')

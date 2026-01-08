@@ -13,7 +13,9 @@ async function ensureServiceWorker(serviceWorkerUrl) {
   if (!('serviceWorker' in navigator)) {
     throw new Error('Service Worker not supported in this browser')
   }
-  const registration = await navigator.serviceWorker.register(serviceWorkerUrl)
+  const registration = await navigator.serviceWorker.register(serviceWorkerUrl, {
+    type: 'module',
+  })
   return registration
 }
 
@@ -52,7 +54,6 @@ export function notificationsButton(options = {}) {
     goodbyeBody = 'Notifications are off.',
     storageKey = 'inproto:notifications:binding',
     getUserPubKey,
-    getTargetPubKey,
     signChallenge,
     onStatus,
     onToggle,
@@ -107,7 +108,6 @@ export function notificationsButton(options = {}) {
 
   async function sendSubscription(subscription) {
     const userPubKey = safeGetUserPubKey()
-    const targetPubKey = getTargetPubKey ? getTargetPubKey() : null
     let payload = subscription
     if (userPubKey) {
       if (!signChallenge) throw new Error('Missing signChallenge handler')
@@ -120,7 +120,6 @@ export function notificationsButton(options = {}) {
       payload = {
         subscription,
         userPubKey,
-        targetPubKey,
         challenge,
         signature,
       }
@@ -139,7 +138,6 @@ export function notificationsButton(options = {}) {
     if (userPubKey) {
       setStoredBinding({
         userPubKey,
-        targetPubKey: targetPubKey || null,
       })
     }
   }
@@ -213,7 +211,6 @@ export function notificationsButton(options = {}) {
 
     const stored = getStoredBinding()
     const currentPubKey = safeGetUserPubKey()
-    const currentTarget = getTargetPubKey ? getTargetPubKey() : null
     if (!currentPubKey || stored?.userPubKey !== currentPubKey) {
       try {
         await subscription.unsubscribe()
@@ -227,12 +224,6 @@ export function notificationsButton(options = {}) {
       }
       setStoredBinding(null)
       setStatus('not subscribed for this identity')
-      setState(false)
-      return
-    }
-
-    if (stored?.targetPubKey !== currentTarget) {
-      setStatus('not subscribed for this target')
       setState(false)
       return
     }

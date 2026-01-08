@@ -6,10 +6,10 @@ A tiny Deno + browser demo that generates an `an` keypair, signs messages, and d
 
 - Client-side keypair generation and signing (`an.js` + `nacl`)
 - Web Push subscribe/unsubscribe with VAPID keys
-- Signed direct-message push delivery via `/message`
-- Peer list route for subscribed targets
-- Server-side APDS archive for direct messages
-- Inbox and sent message views
+- Encrypted direct-message push delivery via `/message`
+- Broadcast push channel with client-side decrypt filtering
+- In-memory encrypted message log (last 1000)
+- Inbox and sent message views (client-side decrypt)
 - Optional polling of a latest feed to broadcast updates
 
 ## Quick start
@@ -31,7 +31,7 @@ Note: Service workers and push require HTTPS in production. `localhost` works fo
 
 - The client stores the combined keypair in `localStorage` under `inproto:keypair`.
 - Subscribing requests a challenge from `/subscribe/challenge`, signs it with the private key, and submits the proof to `/subscribe`.
-- Sending a message signs the payload hash and POSTs it to `/message` for delivery to subscribers targeting the recipient pubkey.
+- Sending a message encrypts the payload (including `to`) and POSTs it to `/message` for broadcast delivery.
 
 ## Server endpoints
 
@@ -39,10 +39,9 @@ Note: Service workers and push require HTTPS in production. `localhost` works fo
 - `GET /subscribe/challenge?pubkey=...`: issues a short-lived challenge.
 - `POST /subscribe`: stores a verified subscription.
 - `POST /unsubscribe`: removes a subscription by endpoint.
-- `GET /peers?pubkey=...`: returns target pubkeys this user subscribed to.
-- `GET /messages?pubkey=...`: returns stored direct messages for the target pubkey.
-- `GET /messages/sent?pubkey=...`: returns stored direct messages sent by the pubkey.
-- `POST /message`: sends a signed direct-message push to matching subscribers.
+- `GET /messages`: returns stored encrypted messages.
+- `GET /messages/sent?pubkey=...`: returns encrypted messages sent by the pubkey.
+- `POST /message`: stores an encrypted direct message and broadcasts it.
 - `POST /poll-now`: fetches the latest feed once.
 - `POST /push-latest`: force-pushes the latest feed even if unchanged.
 
@@ -57,7 +56,7 @@ Note: Service workers and push require HTTPS in production. `localhost` works fo
 - `VAPID_CONFIG_PATH` (default `./config.json`)
 - `VAPID_SUBJECT` (default `mailto:ops@wiredove.net`)
 - `PUSH_ICON_URL` (default `/dovepurple_sm.png`)
-- `APDS_CACHE` (default `inproto`)
+- `MAX_MESSAGES` (default `1000`)
 
 VAPID keys are stored in `config.json` (created if missing). Subscriptions and polling state are stored under `data/`.
 
