@@ -116,7 +116,10 @@ export function notificationsButton(options = {}) {
       body: JSON.stringify(payload),
     })
 
-    if (!res.ok) throw new Error('Subscribe failed')
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(detail ? `Subscribe failed: ${detail}` : 'Subscribe failed')
+    }
     setStatus('subscribed')
     setState(true)
     await showLocalNotification(welcomeTitle, welcomeBody, iconUrl)
@@ -136,11 +139,15 @@ export function notificationsButton(options = {}) {
     }
 
     await subscription.unsubscribe()
-    await fetch(unsubscribeUrl, {
+    const res = await fetch(unsubscribeUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ endpoint: subscription.endpoint }),
     })
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(detail ? `Unsubscribe failed: ${detail}` : 'Unsubscribe failed')
+    }
 
     setStatus('unsubscribed')
     setState(false)
@@ -165,7 +172,8 @@ export function notificationsButton(options = {}) {
     const action = enabled ? unsubscribe : subscribe
     action().catch((err) => {
       console.error(err)
-      setStatus(enabled ? 'unsubscribe failed' : 'subscribe failed')
+      const message = err instanceof Error ? err.message : String(err)
+      setStatus(message || (enabled ? 'unsubscribe failed' : 'subscribe failed'))
     })
   })
 
