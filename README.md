@@ -1,4 +1,4 @@
-# anproto-in
+# Inproto
 
 A tiny Deno + browser demo that generates an `an` keypair, signs messages, and delivers them as web push notifications. It includes a minimal UI for key management, subscription toggling, and sending direct push messages to a target pubkey.
 
@@ -26,7 +26,7 @@ Note: Service workers and push require HTTPS in production. `localhost` works fo
 
 ## App flow
 
-- The client stores the combined keypair in `localStorage` under `anproto:keypair`.
+- The client stores the combined keypair in `localStorage` under `inproto:keypair`.
 - Subscribing requests a challenge from `/subscribe/challenge`, signs it with the private key, and submits the proof to `/subscribe`.
 - Sending a message signs the payload hash and POSTs it to `/message` for delivery to subscribers targeting the recipient pubkey.
 

@@ -16,6 +16,14 @@ const targetStatus = document.getElementById('target-status')
 const pushBodyInput = document.getElementById('push-body')
 const sendPushButton = document.getElementById('send-push')
 const sendStatus = document.getElementById('send-status')
+const storageKeys = {
+  keypair: 'inproto:keypair',
+  publicKey: 'inproto:publicKey',
+}
+const legacyStorageKeys = {
+  keypair: 'anproto:keypair',
+  publicKey: 'anproto:publicKey',
+}
 
 function setKeyStatus(text) {
   keyStatus.textContent = text
@@ -26,13 +34,16 @@ function setOwnPubkey(text) {
 }
 
 function getStoredKeypair() {
-  return localStorage.getItem('anproto:keypair')
+  return localStorage.getItem(storageKeys.keypair) ||
+    localStorage.getItem(legacyStorageKeys.keypair)
 }
 
 function getStoredPublicKey() {
   const combined = getStoredKeypair()
   if (!combined) return null
-  return localStorage.getItem('anproto:publicKey') || combined.slice(0, 44)
+  return localStorage.getItem(storageKeys.publicKey) ||
+    localStorage.getItem(legacyStorageKeys.publicKey) ||
+    combined.slice(0, 44)
 }
 
 function buildShareUrl(pubkey) {
@@ -143,6 +154,8 @@ function loadStoredKeys() {
     setOwnPubkey('no pubkey yet')
     return
   }
+  localStorage.setItem(storageKeys.keypair, combined)
+  localStorage.setItem(storageKeys.publicKey, publicKey)
   combinedKeyArea.value = combined
   setOwnPubkey(publicKey)
   setKeyStatus('loaded from localStorage')
@@ -154,8 +167,8 @@ async function generateKeypair() {
   try {
     const combined = await an.gen()
     const publicKey = combined.slice(0, 44)
-    localStorage.setItem('anproto:keypair', combined)
-    localStorage.setItem('anproto:publicKey', publicKey)
+    localStorage.setItem(storageKeys.keypair, combined)
+    localStorage.setItem(storageKeys.publicKey, publicKey)
     combinedKeyArea.value = combined
     setOwnPubkey(publicKey)
     setKeyStatus('ready (stored in localStorage)')
@@ -171,8 +184,10 @@ async function generateKeypair() {
 
 generateButton.addEventListener('click', generateKeypair)
 clearButton.addEventListener('click', () => {
-  localStorage.removeItem('anproto:keypair')
-  localStorage.removeItem('anproto:publicKey')
+  localStorage.removeItem(storageKeys.keypair)
+  localStorage.removeItem(storageKeys.publicKey)
+  localStorage.removeItem(legacyStorageKeys.keypair)
+  localStorage.removeItem(legacyStorageKeys.publicKey)
   combinedKeyArea.value = ''
   setOwnPubkey('no pubkey yet')
   setKeyStatus('cleared localStorage')
@@ -260,7 +275,7 @@ const pushButton = notificationsButton({
     if (!combined) throw new Error('Generate a keypair first')
     return await an.sign(challenge, combined)
   },
-  welcomeTitle: 'Welcome to anproto-in',
+  welcomeTitle: 'Welcome to Inproto',
   welcomeBody: 'Notifications are on.',
   goodbyeTitle: 'Notifications off',
   goodbyeBody: 'Notifications are off.',

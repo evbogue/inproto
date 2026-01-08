@@ -1,5 +1,5 @@
 self.addEventListener('push', (event) => {
-  let payload = { title: 'anproto-in', body: 'New message', url: '/' }
+  let payload = { title: 'Inproto', body: 'New message', url: '/' }
   if (event.data) {
     try {
       payload = event.data.json()
