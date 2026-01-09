@@ -476,7 +476,6 @@ pushButton = notificationsButton({
   iconOn: 'notifications_active',
   iconOff: 'notifications',
   buttonEl: pushMount,
-  serviceWorkerUrl: '/sw.js',
   vapidKeyUrl: '/vapid-public-key',
   subscribeUrl: '/subscribe',
   unsubscribeUrl: '/unsubscribe',

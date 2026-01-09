@@ -24,7 +24,6 @@ export function notificationsButton(options = {}) {
     iconOff = 'notifications',
     titleOn = 'Turn off notifications',
     titleOff = 'Turn on notifications',
-    serviceWorkerUrl = '/sw.js',
     vapidKeyUrl = '/vapid-public-key',
     subscribeUrl = '/subscribe',
     unsubscribeUrl = '/unsubscribe',
@@ -102,7 +101,7 @@ export function notificationsButton(options = {}) {
   }
 
   async function unsubscribe() {
-    const registration = await navigator.serviceWorker.getRegistration()
+    const registration = await navigator.serviceWorker.ready.catch(() => null)
     if (!registration) {
       setStatus('no service worker')
       return
