@@ -124,6 +124,13 @@ function ensureServiceWorkerKeySync() {
     if (data.type === 'inproto:request-key') {
       syncServiceWorkerKey().catch(() => {})
     }
+    if (data.type === 'inproto:sw-log') {
+      if (data.data !== undefined) {
+        console.log(`[inproto-sw] ${data.step}`, data.data)
+      } else {
+        console.log(`[inproto-sw] ${data.step}`)
+      }
+    }
   })
 }
 
