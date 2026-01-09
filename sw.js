@@ -1,4 +1,6 @@
-self.cryptoModulesPromise = null
+import nacl from './lib/nacl-fast-es.js'
+import { decode, encode } from './lib/base64.js'
+import { convertPublicKey, convertSecretKey } from './lib/ed2curve.js'
 
 function swLog(step, data) {
   try {
@@ -36,27 +38,6 @@ function broadcastMessage(type, data) {
       }
     })
     .catch(() => {})
-}
-
-function loadCryptoModules() {
-  swLog('loadCryptoModules:start')
-  if (!self.cryptoModulesPromise) {
-    self.cryptoModulesPromise = Promise.all([
-      import('./lib/nacl-fast-es.js'),
-      import('./lib/base64.js'),
-      import('./lib/ed2curve.js'),
-    ]).then(([naclMod, base64Mod, ed2curveMod]) => ({
-      nacl: naclMod.default ?? naclMod,
-      decode: base64Mod.decode,
-      encode: base64Mod.encode,
-      convertPublicKey: ed2curveMod.convertPublicKey,
-      convertSecretKey: ed2curveMod.convertSecretKey,
-    }))
-  }
-  return self.cryptoModulesPromise.then((mods) => {
-    swLog('loadCryptoModules:ready')
-    return mods
-  })
 }
 
 const DB_NAME = 'inproto'
@@ -128,7 +109,6 @@ async function decodeKey(value) {
     return null
   }
   try {
-    const { decode } = await loadCryptoModules()
     const decoded = decode(value.curveSecret)
     swLog('decodeKey:success')
     return decoded
@@ -143,7 +123,6 @@ async function decodeKey(value) {
 
 async function decryptPayload(payload, curveSecret) {
   swLog('decryptPayload:start')
-  const { nacl, decode, convertPublicKey } = await loadCryptoModules()
   const from = typeof payload.from === 'string' ? payload.from : ''
   if (!from) {
     swLog('decryptPayload:missing-from')
@@ -184,7 +163,6 @@ async function decryptPayload(payload, curveSecret) {
 async function runSelfTest() {
   swLog('selftest:start')
   try {
-    const { nacl, encode, decode, convertPublicKey, convertSecretKey } = await loadCryptoModules()
     const sender = nacl.sign.keyPair()
     const receiver = nacl.sign.keyPair()
     const senderCurveSecret = convertSecretKey(sender.secretKey)
