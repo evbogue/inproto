@@ -25,6 +25,19 @@ function swLog(step, data) {
     .catch(() => {})
 }
 
+function broadcastMessage(type, data) {
+  if (!self.clients?.matchAll) return
+  self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then((clients) => {
+      for (const client of clients) {
+        try {
+          client.postMessage({ type, data, ts: Date.now() })
+        } catch {}
+      }
+    })
+    .catch(() => {})
+}
+
 function loadCryptoModules() {
   swLog('loadCryptoModules:start')
   if (!self.cryptoModulesPromise) {
@@ -35,7 +48,9 @@ function loadCryptoModules() {
     ]).then(([naclMod, base64Mod, ed2curveMod]) => ({
       nacl: naclMod.default ?? naclMod,
       decode: base64Mod.decode,
+      encode: base64Mod.encode,
       convertPublicKey: ed2curveMod.convertPublicKey,
+      convertSecretKey: ed2curveMod.convertSecretKey,
     }))
   }
   return self.cryptoModulesPromise.then((mods) => {
@@ -166,6 +181,58 @@ async function decryptPayload(payload, curveSecret) {
   return null
 }
 
+async function runSelfTest() {
+  swLog('selftest:start')
+  try {
+    const { nacl, encode, decode, convertPublicKey, convertSecretKey } = await loadCryptoModules()
+    const sender = nacl.sign.keyPair()
+    const receiver = nacl.sign.keyPair()
+    const senderCurveSecret = convertSecretKey(sender.secretKey)
+    const senderCurvePublic = convertPublicKey(sender.publicKey)
+    const receiverCurveSecret = convertSecretKey(receiver.secretKey)
+    const receiverCurvePublic = convertPublicKey(receiver.publicKey)
+
+    if (!senderCurveSecret || !senderCurvePublic || !receiverCurveSecret || !receiverCurvePublic) {
+      throw new Error('failed to convert keypairs')
+    }
+
+    const testPayload = {
+      type: 'dm',
+      from: encode(sender.publicKey),
+      to: encode(receiver.publicKey),
+      ts: Date.now(),
+      body: 'inproto sw self-test',
+    }
+    const payloadText = JSON.stringify(testPayload)
+    const nonce = nacl.randomBytes(24)
+    const boxed = nacl.box(new TextEncoder().encode(payloadText), nonce, receiverCurvePublic, senderCurveSecret)
+    const envelope = {
+      type: 'dm',
+      from: testPayload.from,
+      boxes: [{ nonce: encode(nonce), box: encode(boxed) }],
+    }
+
+    const decodedSecret = decode(encode(receiverCurveSecret))
+    const message = await decryptPayload(envelope, decodedSecret)
+    if (!message || message.body !== testPayload.body) {
+      throw new Error('decrypted payload mismatch')
+    }
+
+    await self.registration.showNotification('SW self-test OK', {
+      body: 'Decryption succeeded',
+      data: { url: '/', message },
+      icon: '/dovepurple_sm.png',
+    })
+    broadcastMessage('inproto:selftest-result', { ok: true })
+    swLog('selftest:success')
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    swLog('selftest:error', { detail })
+    broadcastMessage('inproto:selftest-result', { ok: false, detail })
+    throw err
+  }
+}
+
 self.addEventListener('message', (event) => {
   const data = event.data
   swLog('message:event', { hasData: Boolean(data) })
@@ -183,6 +250,9 @@ self.addEventListener('message', (event) => {
   if (data.type === 'inproto:clear-key') {
     swLog('message:clear-key')
     event.waitUntil(setStoredKey(null))
+  }
+  if (data.type === 'inproto:selftest') {
+    event.waitUntil(runSelfTest())
   }
 })
 
