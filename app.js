@@ -22,8 +22,6 @@ const sendStatus = document.getElementById('send-status')
 const inboxSection = document.getElementById('inbox-section')
 const inboxStatus = document.getElementById('inbox-status')
 const inboxList = document.getElementById('inbox-list')
-const swSelftestButton = document.getElementById('sw-selftest')
-const swSelftestStatus = document.getElementById('sw-selftest-status')
 let pushButton = null
 const storageKeys = {
   keypair: 'inproto:keypair',
@@ -38,10 +36,6 @@ function setKeyStatus(text) {
 
 function setOwnPubkey(text) {
   ownPubkey.textContent = text
-}
-
-function setSwSelftestStatus(text) {
-  if (swSelftestStatus) swSelftestStatus.textContent = text || ''
 }
 
 function getStoredKeypair() {
@@ -143,13 +137,6 @@ function ensureServiceWorkerKeySync() {
         console.log(`[inproto-sw] ${data.step}`, data.data)
       } else {
         console.log(`[inproto-sw] ${data.step}`)
-      }
-    }
-    if (data.type === 'inproto:selftest-result') {
-      if (data.data?.ok) {
-        setSwSelftestStatus('self-test ok')
-      } else {
-        setSwSelftestStatus(data.data?.detail || 'self-test failed')
       }
     }
   })
@@ -495,6 +482,7 @@ sendPushButton.addEventListener('click', async () => {
       const detail = await res.text().catch(() => '')
       throw new Error(detail ? `send failed: ${detail}` : 'send failed')
     }
+    pushBodyInput.value = ''
     sendStatus.textContent = 'sent'
   } catch (err) {
     console.error(err)
@@ -538,19 +526,3 @@ pushButton = notificationsButton({
     if (notificationsStatus) notificationsStatus.textContent = text || ''
   },
 })
-
-if (swSelftestButton) {
-  swSelftestButton.addEventListener('click', async () => {
-    if (!('serviceWorker' in navigator)) {
-      setSwSelftestStatus('service worker unsupported')
-      return
-    }
-    setSwSelftestStatus('running...')
-    const registration = await navigator.serviceWorker.ready.catch(() => null)
-    if (!registration?.active) {
-      setSwSelftestStatus('service worker not ready')
-      return
-    }
-    registration.active.postMessage({ type: 'inproto:selftest' })
-  })
-}
