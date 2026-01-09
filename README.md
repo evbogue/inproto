@@ -1,15 +1,13 @@
 # Inproto
 
-A tiny Deno + browser demo that generates an `an` keypair, signs messages, and delivers them as web push notifications. It includes a minimal UI for key management, subscription toggling, and sending direct push messages to a target pubkey.
+A tiny Deno + browser demo that generates an `an` keypair, encrypts messages, and delivers them as web push notifications. It includes a minimal UI for key management, subscription toggling, and sending direct push messages to a target pubkey.
 
 ## Features
 
-- Client-side keypair generation and signing (`an.js` + `nacl`)
+- Client-side keypair generation (`an.js` + `nacl`)
 - Web Push subscribe/unsubscribe with VAPID keys
 - Encrypted direct-message push delivery via `/message`
 - Broadcast push channel with client-side decrypt filtering
-- In-memory encrypted message log (last 1000)
-- Inbox and sent message views (client-side decrypt)
 - Optional polling of a latest feed to broadcast updates
 
 ## Quick start
@@ -21,8 +19,8 @@ DENO_DIR=.deno deno run --allow-net --allow-read --allow-write --allow-env serve
 ```
 
 2. Open `http://localhost:8787` in a browser.
-3. Generate a keypair, then share your profile URL (`/#<pubkey>`).
-4. Visit a target profile URL and send a push message.
+3. Generate a keypair.
+4. Paste a target pubkey and send a push message.
 5. Toggle Notifications to subscribe/unsubscribe.
 
 Note: Service workers and push require HTTPS in production. `localhost` works for local dev.
@@ -30,17 +28,14 @@ Note: Service workers and push require HTTPS in production. `localhost` works fo
 ## App flow
 
 - The client stores the combined keypair in `localStorage` under `inproto:keypair`.
-- Subscribing requests a challenge from `/subscribe/challenge`, signs it with the private key, and submits the proof to `/subscribe`.
+- Subscribing registers a push subscription via `/subscribe`.
 - Sending a message encrypts the payload (including `to`) and POSTs it to `/message` for broadcast delivery.
 
 ## Server endpoints
 
 - `GET /vapid-public-key`: returns the VAPID public key.
-- `GET /subscribe/challenge?pubkey=...`: issues a short-lived challenge.
-- `POST /subscribe`: stores a verified subscription.
+- `POST /subscribe`: stores a subscription.
 - `POST /unsubscribe`: removes a subscription by endpoint.
-- `GET /messages`: returns stored encrypted messages.
-- `GET /messages/sent?pubkey=...`: returns encrypted messages sent by the pubkey.
 - `POST /message`: stores an encrypted direct message and broadcasts it.
 - `POST /poll-now`: fetches the latest feed once.
 - `POST /push-latest`: force-pushes the latest feed even if unchanged.
@@ -56,7 +51,6 @@ Note: Service workers and push require HTTPS in production. `localhost` works fo
 - `VAPID_CONFIG_PATH` (default `./config.json`)
 - `VAPID_SUBJECT` (default `mailto:ops@wiredove.net`)
 - `PUSH_ICON_URL` (default `/dovepurple_sm.png`)
-- `MAX_MESSAGES` (default `1000`)
 
 VAPID keys are stored in `config.json` (created if missing). Subscriptions and polling state are stored under `data/`.
 

@@ -1,7 +1,5 @@
 import webpush from 'npm:web-push@3.6.7'
 import { dirname, fromFileUrl, join } from 'https://deno.land/std@0.224.0/path/mod.ts'
-import nacl from './lib/nacl-fast-es.js'
-import { decode } from './lib/base64.js'
 
 const BASE_DIR = dirname(fromFileUrl(import.meta.url))
 const DATA_DIR = join(BASE_DIR, 'data')
@@ -15,57 +13,6 @@ const DEFAULTS = {
   configFile: join(BASE_DIR, 'config.json'),
   vapidSubject: 'mailto:ops@wiredove.net',
   pushIconUrl: '/dovepurple_sm.png',
-  maxMessages: 1000,
-}
-
-const CHALLENGE_TTL_MS = 5 * 60 * 1000
-const challenges = new Map()
-
-function pruneChallenges(now = Date.now()) {
-  for (const [challenge, entry] of challenges.entries()) {
-    if (entry.expiresAt <= now) challenges.delete(challenge)
-  }
-}
-
-function issueChallenge(pubkey) {
-  pruneChallenges()
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  const challenge = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-  const now = Date.now()
-  challenges.set(challenge, {
-    pubkey,
-    issuedAt: now,
-    expiresAt: now + CHALLENGE_TTL_MS,
-  })
-  return { challenge, issuedAt: now }
-}
-
-function consumeChallenge(pubkey, challenge) {
-  pruneChallenges()
-  const entry = challenges.get(challenge)
-  if (!entry) return false
-  if (entry.pubkey !== pubkey) return false
-  if (entry.expiresAt <= Date.now()) return false
-  challenges.delete(challenge)
-  return true
-}
-
-function openSignedMessage(signature) {
-  if (!signature || signature.length < 45) return null
-  const pub = signature.substring(0, 44)
-  const signed = signature.substring(44)
-  const opened = nacl.sign.open(decode(signed), decode(pub))
-  if (!opened) return null
-  const message = new TextDecoder().decode(opened)
-  return { pub, message }
-}
-
-function verifyChallengeSignature(pubkey, signature, challenge) {
-  const opened = openSignedMessage(signature)
-  if (!opened) return false
-  if (opened.pub !== pubkey) return false
-  return opened.message.endsWith(challenge)
 }
 
 async function readJsonFile(path, fallback) {
@@ -197,7 +144,6 @@ function summarizeLatest(record) {
 }
 
 export async function createNotificationsService(options = {}) {
-  const maxMessagesEnv = Number(Deno.env.get('MAX_MESSAGES'))
   const settings = {
     latestUrl: Deno.env.get('LATEST_URL') ?? DEFAULTS.latestUrl,
     pollMs: Number(Deno.env.get('POLL_MS') ?? DEFAULTS.pollMs),
@@ -207,7 +153,6 @@ export async function createNotificationsService(options = {}) {
     configFile: Deno.env.get('VAPID_CONFIG_PATH') ?? DEFAULTS.configFile,
     vapidSubject: Deno.env.get('VAPID_SUBJECT') ?? DEFAULTS.vapidSubject,
     pushIconUrl: Deno.env.get('PUSH_ICON_URL') ?? DEFAULTS.pushIconUrl,
-    maxMessages: Number.isFinite(maxMessagesEnv) ? maxMessagesEnv : DEFAULTS.maxMessages,
     ...options,
   }
 
@@ -234,19 +179,6 @@ export async function createNotificationsService(options = {}) {
 
   async function saveState(state) {
     await writeJsonFile(settings.stateFile, state)
-  }
-
-  const messageLog = []
-  function storeMessage(message) {
-    messageLog.push(message)
-    if (messageLog.length > settings.maxMessages) {
-      messageLog.splice(0, messageLog.length - settings.maxMessages)
-    }
-  }
-
-  function getMessages(filter) {
-    if (!filter) return [...messageLog]
-    return messageLog.filter(filter)
   }
 
   async function pollLatest(force = false) {
@@ -381,49 +313,6 @@ export async function createNotificationsService(options = {}) {
       return Response.json({ key: config.vapidPublicKey })
     }
 
-    if (req.method === 'GET' && url.pathname === '/peers') {
-      const pubkey = url.searchParams.get('pubkey')
-      if (!pubkey) {
-        return Response.json({ error: 'missing pubkey' }, { status: 400 })
-      }
-      const subs = await loadSubscriptions()
-      const peers = []
-      const seen = new Set()
-      for (const sub of subs) {
-        if (sub.userPubKey !== pubkey) continue
-        const target = typeof sub.targetPubKey === 'string'
-          ? sub.targetPubKey.trim()
-          : ''
-        if (!target || seen.has(target)) continue
-        seen.add(target)
-        peers.push(target)
-      }
-      return Response.json({ peers })
-    }
-
-    if (req.method === 'GET' && url.pathname === '/messages') {
-      return Response.json({ messages: getMessages() })
-    }
-
-    if (req.method === 'GET' && url.pathname === '/messages/sent') {
-      const pubkey = url.searchParams.get('pubkey')
-      if (!pubkey) {
-        return Response.json({ error: 'missing pubkey' }, { status: 400 })
-      }
-      return Response.json({
-        messages: getMessages((item) => item.from === pubkey),
-      })
-    }
-
-    if (req.method === 'GET' && url.pathname === '/subscribe/challenge') {
-      const pubkey = url.searchParams.get('pubkey')
-      if (!pubkey) {
-        return Response.json({ error: 'missing pubkey' }, { status: 400 })
-      }
-      const issued = issueChallenge(pubkey)
-      return Response.json(issued)
-    }
-
     if (req.method === 'POST' && url.pathname === '/subscribe') {
       const body = await req.json().catch(() => null)
       if (!body || typeof body !== 'object') {
@@ -431,23 +320,7 @@ export async function createNotificationsService(options = {}) {
       }
 
       const sub = body.subscription ?? body
-      const userPubKey = body.userPubKey
-      const targetPubKey = body.targetPubKey || userPubKey
-      const challenge = body.challenge
-      const signature = body.signature
-      if (!userPubKey) {
-        return Response.json({ error: 'missing pubkey' }, { status: 400 })
-      }
-      if (!challenge || !signature) {
-        return Response.json({ error: 'missing proof' }, { status: 400 })
-      }
-      if (!consumeChallenge(userPubKey, challenge)) {
-        return Response.json({ error: 'invalid challenge' }, { status: 400 })
-      }
-      if (!verifyChallengeSignature(userPubKey, signature, challenge)) {
-        return Response.json({ error: 'invalid signature' }, { status: 400 })
-      }
-      if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+      if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
         return Response.json({ error: 'missing fields' }, { status: 400 })
       }
 
@@ -459,17 +332,14 @@ export async function createNotificationsService(options = {}) {
           id,
           endpoint: sub.endpoint,
           keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
-          userPubKey,
-          targetPubKey,
           createdAt: new Date().toISOString(),
         })
         await saveSubscriptions(subs)
       } else if (
-        existing.userPubKey !== userPubKey ||
-        existing.targetPubKey !== targetPubKey
+        existing.keys.p256dh !== sub.keys.p256dh ||
+        existing.keys.auth !== sub.keys.auth
       ) {
-        existing.userPubKey = userPubKey
-        existing.targetPubKey = targetPubKey
+        existing.keys = { p256dh: sub.keys.p256dh, auth: sub.keys.auth }
         await saveSubscriptions(subs)
       }
 
@@ -524,20 +394,11 @@ export async function createNotificationsService(options = {}) {
         return Response.json({ error: 'invalid boxes' }, { status: 400 })
       }
 
-      const receivedAt = Date.now()
-      const storedMessage = {
-        from,
-        boxes: cleanBoxes,
-        receivedAt,
-      }
-      storeMessage(storedMessage)
-
       const pushPayload = JSON.stringify({
         type: 'dm',
         from,
         boxes: cleanBoxes,
         icon: settings.pushIconUrl,
-        receivedAt,
       })
 
       const subs = await loadSubscriptions()

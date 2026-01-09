@@ -14,7 +14,6 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <style>
       :root {
         color-scheme: light;
@@ -89,64 +88,6 @@
         text-decoration: underline;
       }
 
-      .profile-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .peers-list {
-        list-style: none;
-        padding: 0;
-        margin: 12px 0 0 0;
-        display: grid;
-        gap: 6px;
-      }
-
-      .peers-list a {
-        color: inherit;
-        text-decoration: underline;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-      }
-
-      .messages-list {
-        list-style: none;
-        padding: 0;
-        margin: 12px 0 0 0;
-        display: grid;
-        gap: 10px;
-      }
-
-      .message-card {
-        border: 1px solid #1c1c1c;
-        background: #fff;
-        padding: 8px;
-        display: grid;
-        gap: 6px;
-      }
-
-      .message-meta {
-        font-size: 0.85rem;
-        color: #333;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-      }
-
-      .message-meta .meta-label {
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        font-size: 0.72rem;
-        color: #555;
-      }
-
-      .message-body {
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-      }
-
       .icon-link {
         display: inline-flex;
         align-items: center;
@@ -174,20 +115,6 @@
         animation: fade-in 140ms ease-out;
       }
 
-      #qr-container {
-        margin-top: 12px;
-        padding: 8px;
-        border: 1px solid #1c1c1c;
-        background: #fff;
-        display: inline-block;
-      }
-
-      #qr-canvas {
-        display: block;
-        width: 200px;
-        height: 200px;
-      }
-
       @keyframes fade-in {
         from {
           opacity: 0;
@@ -210,15 +137,9 @@
         <a href="#key" aria-label="Key">
           <span class="material-symbols-outlined" aria-hidden="true">key</span>
         </a>
-        <a href="#peers" aria-label="Peers">
-          <span class="material-symbols-outlined" aria-hidden="true">group</span>
-        </a>
-        <a href="#inbox" aria-label="Inbox">
-          <span class="material-symbols-outlined" aria-hidden="true">inbox</span>
-        </a>
-        <div id="notifications-controls"></div>
-        <div class="status" id="notifications-status"></div>
+        <a id="notifications-controls" class="icon-link" href="#" aria-label="Notifications"></a>
       </nav>
+      <div class="status" id="notifications-status"></div>
       <div id="route-root">
         <div id="key-section">
           <div class="status">
@@ -229,41 +150,15 @@
             <button id="generate" type="button">Generate</button>
             <button id="clear-keys" type="button">Delete</button>
           </div>
-        <div class="status" id="key-status"></div>
-      </div>
-
-      <div id="profile-section">
-        <div class="profile-header">
-          <div class="status"><span id="profile-pubkey"></span></div>
-          <a id="qr-toggle" class="icon-link" href="#" aria-expanded="false" aria-label="Show QR code">
-            <span class="material-symbols-outlined" aria-hidden="true">qr_code_2</span>
-          </a>
-        </div>
-      </div>
-
-        <div id="peers-section">
-          <h2>Peers</h2>
-          <div class="status" id="peers-status"></div>
-          <ul class="peers-list" id="peers-list"></ul>
-        </div>
-
-        <div id="inbox-section">
-          <h2>Inbox</h2>
-          <div class="status" id="inbox-status"></div>
-          <ul class="messages-list" id="inbox-list"></ul>
+          <div class="status" id="key-status"></div>
         </div>
 
         <div id="push-section">
-          <div class="status" id="target-status"></div>
+          <label for="target-pubkey">Target pubkey</label>
+          <input id="target-pubkey" placeholder="paste a pubkey" />
           <textarea id="push-body" placeholder="send a message"></textarea>
           <button id="send-push" type="button">Push</button>
           <div class="status" id="send-status"></div>
-        </div>
-
-        <div id="profile-messages">
-          <h2>Sent Messages</h2>
-          <div class="status" id="profile-messages-status"></div>
-          <ul class="messages-list" id="profile-messages-list"></ul>
         </div>
       </div>
     </main>

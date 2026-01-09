@@ -26,14 +26,6 @@ async function getPublicKey(vapidKeyUrl) {
   return data.key
 }
 
-async function showLocalNotification(title, body, iconUrl) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') {
-    return
-  }
-  const registration = await navigator.serviceWorker.getRegistration()
-  if (!registration) return
-  await registration.showNotification(title, { body, icon: iconUrl })
-}
 
 export function notificationsButton(options = {}) {
   const {
@@ -46,29 +38,25 @@ export function notificationsButton(options = {}) {
     vapidKeyUrl = '/vapid-public-key',
     subscribeUrl = '/subscribe',
     unsubscribeUrl = '/unsubscribe',
-    challengeUrl = '/subscribe/challenge',
-    iconUrl = '/favicon.ico',
-    welcomeTitle = 'Welcome',
-    welcomeBody = 'Notifications are on.',
-    goodbyeTitle = 'Goodbye',
-    goodbyeBody = 'Notifications are off.',
-    storageKey = 'inproto:notifications:binding',
-    getUserPubKey,
-    signChallenge,
+    buttonEl,
     onStatus,
     onToggle,
   } = options
 
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.className = className
+  const button = buttonEl || document.createElement('button')
+  if (!buttonEl) button.type = 'button'
+  if (className) button.className = className
+  if (button instanceof HTMLAnchorElement) {
+    button.setAttribute('role', 'button')
+    if (!button.getAttribute('href')) button.setAttribute('href', '#')
+  }
   button.title = titleOff
   button.setAttribute('aria-label', titleOff)
 
   const icon = document.createElement('span')
   icon.className = 'material-symbols-outlined'
   icon.setAttribute('aria-hidden', 'true')
-  button.appendChild(icon)
+  button.replaceChildren(icon)
 
   function setStatus(text) {
     if (onStatus) onStatus(text)
@@ -83,68 +71,16 @@ export function notificationsButton(options = {}) {
     if (onToggle) onToggle(enabled)
   }
 
-  function getStoredBinding() {
-    if (!storageKey) return null
-    const raw = localStorage.getItem(storageKey)
-    if (!raw) return null
-    try {
-      return JSON.parse(raw)
-    } catch {
-      return null
-    }
-  }
-
-  function setStoredBinding(value) {
-    if (!storageKey) return
-    if (value) {
-      localStorage.setItem(storageKey, JSON.stringify(value))
-    } else {
-      localStorage.removeItem(storageKey)
-    }
-  }
-
-  function safeGetUserPubKey() {
-    if (!getUserPubKey) return null
-    try {
-      return getUserPubKey()
-    } catch {
-      return null
-    }
-  }
-
   async function sendSubscription(subscription) {
-    const userPubKey = safeGetUserPubKey()
-    let payload = subscription
-    if (userPubKey) {
-      if (!signChallenge) throw new Error('Missing signChallenge handler')
-      const challengeRes = await fetch(
-        `${challengeUrl}?pubkey=${encodeURIComponent(userPubKey)}`,
-      )
-      if (!challengeRes.ok) throw new Error('Challenge request failed')
-      const { challenge } = await challengeRes.json()
-      const signature = await signChallenge(challenge)
-      payload = {
-        subscription,
-        userPubKey,
-        challenge,
-        signature,
-      }
-    }
-
     const res = await fetch(subscribeUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(subscription),
     })
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
       throw new Error(detail ? `Subscribe failed: ${detail}` : 'Subscribe failed')
-    }
-    if (userPubKey) {
-      setStoredBinding({
-        userPubKey,
-      })
     }
   }
 
@@ -167,7 +103,6 @@ export function notificationsButton(options = {}) {
     await sendSubscription(subscription)
     setStatus('subscribed')
     setState(true)
-    await showLocalNotification(welcomeTitle, welcomeBody, iconUrl)
   }
 
   async function unsubscribe() {
@@ -196,12 +131,11 @@ export function notificationsButton(options = {}) {
 
     setStatus('unsubscribed')
     setState(false)
-    setStoredBinding(null)
-    await showLocalNotification(goodbyeTitle, goodbyeBody, iconUrl)
   }
 
   async function refresh() {
     if (!('serviceWorker' in navigator)) {
+      setStatus('service worker unsupported')
       setState(false)
       return
     }
@@ -211,33 +145,16 @@ export function notificationsButton(options = {}) {
       ? await registration.pushManager.getSubscription()
       : null
     if (!subscription) {
+      setStatus('not subscribed')
       setState(false)
       return
     }
-
-    const stored = getStoredBinding()
-    const currentPubKey = safeGetUserPubKey()
-    if (!currentPubKey || stored?.userPubKey !== currentPubKey) {
-      try {
-        await subscription.unsubscribe()
-        await fetch(unsubscribeUrl, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        })
-      } catch (err) {
-        console.error(err)
-      }
-      setStoredBinding(null)
-      setStatus('not subscribed for this identity')
-      setState(false)
-      return
-    }
-
+    setStatus('subscribed')
     setState(true)
   }
 
-  button.addEventListener('click', () => {
+  button.addEventListener('click', (event) => {
+    if (button instanceof HTMLAnchorElement) event.preventDefault()
     const enabled = button.dataset.enabled === 'true'
     const action = enabled ? unsubscribe : subscribe
     action().catch((err) => {

@@ -10,35 +10,18 @@ const keyStatus = document.getElementById('key-status')
 const ownPubkey = document.getElementById('own-pubkey')
 const combinedKeyArea = document.getElementById('combined-key')
 const keySection = document.getElementById('key-section')
-const profileSection = document.getElementById('profile-section')
 const pushSection = document.getElementById('push-section')
 const routeRoot = document.getElementById('route-root')
-const profilePubkey = document.getElementById('profile-pubkey')
-const qrToggle = document.getElementById('qr-toggle')
-const targetStatus = document.getElementById('target-status')
+const targetPubkeyInput = document.getElementById('target-pubkey')
 const pushBodyInput = document.getElementById('push-body')
 const sendPushButton = document.getElementById('send-push')
 const sendStatus = document.getElementById('send-status')
-const peersSection = document.getElementById('peers-section')
-const peersStatus = document.getElementById('peers-status')
-const peersList = document.getElementById('peers-list')
-const profileMessagesStatus = document.getElementById('profile-messages-status')
-const profileMessagesList = document.getElementById('profile-messages-list')
-const profileMessagesSection = document.getElementById('profile-messages')
-const inboxSection = document.getElementById('inbox-section')
-const inboxStatus = document.getElementById('inbox-status')
-const inboxList = document.getElementById('inbox-list')
 let pushButton = null
 const storageKeys = {
   keypair: 'inproto:keypair',
   publicKey: 'inproto:publicKey',
 }
-const legacyStorageKeys = {
-  keypair: 'anproto:keypair',
-  publicKey: 'anproto:publicKey',
-}
 const textEncoder = new TextEncoder()
-const textDecoder = new TextDecoder()
 
 function setKeyStatus(text) {
   keyStatus.textContent = text
@@ -49,16 +32,13 @@ function setOwnPubkey(text) {
 }
 
 function getStoredKeypair() {
-  return localStorage.getItem(storageKeys.keypair) ||
-    localStorage.getItem(legacyStorageKeys.keypair)
+  return localStorage.getItem(storageKeys.keypair)
 }
 
 function getStoredPublicKey() {
   const combined = getStoredKeypair()
   if (!combined) return null
-  return localStorage.getItem(storageKeys.publicKey) ||
-    localStorage.getItem(legacyStorageKeys.publicKey) ||
-    combined.slice(0, 44)
+  return localStorage.getItem(storageKeys.publicKey) || combined.slice(0, 44)
 }
 
 function getEdSecretKeyBytes() {
@@ -104,84 +84,10 @@ async function syncServiceWorkerKey() {
   })
 }
 
-function formatRelativeTime(tsValue) {
-  const ts = Number(tsValue)
-  if (!Number.isFinite(ts)) return 'unknown time'
-  let diff = Math.max(0, Date.now() - ts)
-  const seconds = Math.round(diff / 1000)
-  if (seconds < 5) return 'just now'
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.round(hours / 24)
-  if (days < 7) return `${days}d`
-  const weeks = Math.round(days / 7)
-  if (weeks < 5) return `${weeks}w`
-  const months = Math.round(days / 30)
-  if (months < 12) return `${months}mo`
-  const years = Math.round(days / 365)
-  return `${years}y`
-}
-
-function buildShareUrl(pubkey) {
-  if (!pubkey) return ''
-  return `${window.location.origin}${window.location.pathname}#${pubkey}`
-}
-
-let lastQrValue = ''
-let qrContainer = null
-let qrCanvas = null
-
-function ensureQrCanvas(value) {
-  if (!qrCanvas) {
-    qrCanvas = document.createElement('canvas')
-    qrCanvas.id = 'qr-canvas'
-  }
-  if (!value || value === lastQrValue) return
-  if (typeof QRious !== 'function') {
-    console.error('QRious is not loaded')
-    return
-  }
-  const size = 200
-  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1))
-  qrCanvas.width = size * dpr
-  qrCanvas.height = size * dpr
-  qrCanvas.style.width = `${size}px`
-  qrCanvas.style.height = `${size}px`
-  new QRious({
-    element: qrCanvas,
-    value,
-    size: size * dpr,
-    background: '#fff',
-    foreground: '#1c1c1c',
-  })
-  lastQrValue = value
-}
-
-function openQr() {
-  if (qrContainer) return
-  qrContainer = document.createElement('div')
-  qrContainer.id = 'qr-container'
-  qrContainer.appendChild(qrCanvas)
-  profileSection.appendChild(qrContainer)
-}
-
 function getRoute() {
   const hash = window.location.hash.replace(/^#/, '').trim()
-  if (!hash) return { type: 'home' }
   if (hash === 'key') return { type: 'key' }
-  if (hash === 'peers') return { type: 'peers' }
-  if (hash === 'inbox') return { type: 'inbox' }
-  return { type: 'profile', pubkey: hash }
-}
-
-function getTargetPubKey() {
-  const route = getRoute()
-  if (route.type === 'profile') return route.pubkey
-  if (route.type === 'home') return getStoredPublicKey()
-  return null
+  return { type: 'home' }
 }
 
 function renderSections(sections) {
@@ -197,115 +103,10 @@ function renderSections(sections) {
 function updateView() {
   const route = getRoute()
   if (route.type === 'key') {
-    targetStatus.textContent = ''
-    if (qrContainer) qrContainer.remove()
-    qrContainer = null
-    qrToggle.setAttribute('aria-expanded', 'false')
     renderSections([keySection])
     return
   }
-
-  if (route.type === 'peers') {
-    targetStatus.textContent = ''
-    if (qrContainer) qrContainer.remove()
-    qrContainer = null
-    qrToggle.setAttribute('aria-expanded', 'false')
-    renderSections([peersSection])
-    loadPeers().catch((err) => {
-      console.error(err)
-      setPeersStatus('failed to load peers')
-    })
-    return
-  }
-
-  if (route.type === 'inbox') {
-    targetStatus.textContent = ''
-    if (qrContainer) qrContainer.remove()
-    qrContainer = null
-    qrToggle.setAttribute('aria-expanded', 'false')
-    renderSections([inboxSection])
-    loadInbox().catch((err) => {
-      console.error(err)
-      setInboxStatus('failed to load inbox')
-    })
-    return
-  }
-
-  const target = getTargetPubKey()
-  if (!target) {
-    targetStatus.textContent = 'no pubkey yet (generate one)'
-    if (qrContainer) qrContainer.remove()
-    qrContainer = null
-    qrToggle.setAttribute('aria-expanded', 'false')
-    renderSections([keySection])
-    return
-  }
-
-  targetStatus.textContent = ''
-  profilePubkey.textContent = target
-  ensureQrCanvas(buildShareUrl(target))
-  if (qrContainer) qrContainer.remove()
-  qrContainer = null
-  qrToggle.setAttribute('aria-expanded', 'false')
-  renderSections([profileSection, pushSection, profileMessagesSection])
-  if (pushButton?.refresh) {
-    pushButton.refresh().catch(() => {})
-  }
-  loadProfileMessages(target).catch((err) => {
-    console.error(err)
-    setProfileMessagesStatus('failed to load messages')
-  })
-}
-
-function setPeersStatus(text) {
-  peersStatus.textContent = text
-}
-
-function setProfileMessagesStatus(text) {
-  profileMessagesStatus.textContent = text
-}
-
-function setInboxStatus(text) {
-  inboxStatus.textContent = text
-}
-
-function renderMessagesList(listEl, messages) {
-  listEl.replaceChildren()
-  for (const item of messages) {
-    const card = document.createElement('li')
-    card.className = 'message-card'
-    const meta = document.createElement('div')
-    meta.className = 'message-meta'
-    const ts = item.ts ? `${formatRelativeTime(item.ts)} ago` : 'unknown time'
-    const from = item.from || item.author || 'unknown'
-    const to = item.to || 'unknown'
-    const metaLine1 = document.createElement('div')
-    const metaLine1Prefix = document.createElement('span')
-    metaLine1Prefix.className = 'meta-label'
-    metaLine1Prefix.textContent = `${ts} • from `
-    const fromLink = document.createElement('a')
-    fromLink.href = from !== 'unknown' ? `#${from}` : '#'
-    fromLink.textContent = from
-    metaLine1.appendChild(metaLine1Prefix)
-    metaLine1.appendChild(fromLink)
-    const metaLine2 = document.createElement('div')
-    const metaLine2Prefix = document.createElement('span')
-    metaLine2Prefix.className = 'meta-label'
-    metaLine2Prefix.textContent = 'to '
-    const toLink = document.createElement('a')
-    toLink.href = to !== 'unknown' ? `#${to}` : '#'
-    toLink.textContent = to
-    metaLine2.appendChild(metaLine2Prefix)
-    metaLine2.appendChild(toLink)
-    meta.appendChild(metaLine1)
-    meta.appendChild(metaLine2)
-    const body = document.createElement('div')
-    body.className = 'message-body'
-    body.textContent = item.body || ''
-    card.appendChild(meta)
-    card.appendChild(body)
-    listEl.appendChild(card)
-  }
+  renderSections([keySection, pushSection])
 }
 
 function encryptMessage(messageText, recipientPubKey) {
@@ -315,122 +116,6 @@ function encryptMessage(messageText, recipientPubKey) {
   const nonce = nacl.randomBytes(24)
   const boxed = nacl.box(textEncoder.encode(messageText), nonce, recipientCurve, curveSecret)
   return { nonce: encode(nonce), box: encode(boxed) }
-}
-
-function decryptEnvelope(envelope) {
-  if (!envelope || typeof envelope !== 'object') return null
-  const curveSecret = getCurveSecretKey()
-  if (!curveSecret) return null
-  const senderCurve = getCurvePublicKey(envelope.from)
-  if (!senderCurve) return null
-  const boxes = Array.isArray(envelope.boxes) ? envelope.boxes : []
-  for (const entry of boxes) {
-    if (!entry || typeof entry !== 'object') continue
-    try {
-      const nonce = decode(entry.nonce)
-      const box = decode(entry.box)
-      const opened = nacl.box.open(box, nonce, senderCurve, curveSecret)
-      if (!opened) continue
-      const text = textDecoder.decode(opened)
-      const parsed = JSON.parse(text)
-      return {
-        ...parsed,
-        from: parsed.from || envelope.from,
-        receivedAt: envelope.receivedAt,
-      }
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
-async function fetchEncryptedMessages(url = '/messages') {
-  const res = await fetch(url)
-  if (!res.ok) return []
-  const data = await res.json().catch(() => null)
-  return Array.isArray(data?.messages) ? data.messages : []
-}
-
-function renderPeersList(peers) {
-  peersList.replaceChildren()
-  for (const pubkey of peers) {
-    const item = document.createElement('li')
-    const link = document.createElement('a')
-    link.href = `#${pubkey}`
-    link.textContent = pubkey
-    item.appendChild(link)
-    peersList.appendChild(item)
-  }
-}
-
-async function loadPeers() {
-  const pubkey = getStoredPublicKey()
-  if (!pubkey) {
-    setPeersStatus('generate a keypair first')
-    renderPeersList([])
-    return
-  }
-
-  setPeersStatus('loading...')
-  const encrypted = await fetchEncryptedMessages()
-  const peers = new Set()
-  for (const envelope of encrypted) {
-    const decrypted = decryptEnvelope(envelope)
-    if (!decrypted) continue
-    if (decrypted.from) peers.add(decrypted.from)
-    if (decrypted.to) peers.add(decrypted.to)
-  }
-  peers.delete(pubkey)
-  const list = Array.from(peers)
-  if (list.length === 0) {
-    setPeersStatus('no peers yet')
-  } else {
-    setPeersStatus('')
-  }
-  renderPeersList(list)
-}
-
-async function loadProfileMessages(pubkey) {
-  setProfileMessagesStatus('loading...')
-  const encrypted = await fetchEncryptedMessages(`/messages/sent?pubkey=${encodeURIComponent(pubkey)}`)
-  const messages = []
-  for (const envelope of encrypted) {
-    const decrypted = decryptEnvelope(envelope)
-    if (!decrypted) continue
-    if (decrypted.from !== pubkey) continue
-    messages.push(decrypted)
-  }
-  if (messages.length === 0) {
-    setProfileMessagesStatus('no messages yet')
-  } else {
-    setProfileMessagesStatus('')
-  }
-  renderMessagesList(profileMessagesList, messages)
-}
-
-async function loadInbox() {
-  const pubkey = getStoredPublicKey()
-  if (!pubkey) {
-    setInboxStatus('generate a keypair first')
-    renderMessagesList(inboxList, [])
-    return
-  }
-  setInboxStatus('loading...')
-  const encrypted = await fetchEncryptedMessages()
-  const messages = []
-  for (const envelope of encrypted) {
-    const decrypted = decryptEnvelope(envelope)
-    if (!decrypted) continue
-    if (decrypted.to !== pubkey) continue
-    messages.push(decrypted)
-  }
-  if (messages.length === 0) {
-    setInboxStatus('no messages yet')
-  } else {
-    setInboxStatus('')
-  }
-  renderMessagesList(inboxList, messages)
 }
 
 function loadStoredKeys() {
@@ -455,7 +140,6 @@ function loadStoredKeys() {
 }
 
 async function generateKeypair() {
-  const hadKey = !!getStoredKeypair()
   setKeyStatus('generating...')
   try {
     const combined = await an.gen()
@@ -465,14 +149,7 @@ async function generateKeypair() {
     combinedKeyArea.value = combined
     setOwnPubkey(publicKey)
     setKeyStatus('ready (stored in localStorage)')
-    if (pushButton?.refresh) {
-      pushButton.refresh().catch(() => {})
-    }
     syncServiceWorkerKey().catch(() => {})
-    if (!hadKey) {
-      window.location.hash = publicKey
-      updateView()
-    }
   } catch (err) {
     console.error(err)
     setKeyStatus('failed to generate keypair')
@@ -483,18 +160,13 @@ generateButton.addEventListener('click', generateKeypair)
 clearButton.addEventListener('click', () => {
   localStorage.removeItem(storageKeys.keypair)
   localStorage.removeItem(storageKeys.publicKey)
-  localStorage.removeItem(legacyStorageKeys.keypair)
-  localStorage.removeItem(legacyStorageKeys.publicKey)
   combinedKeyArea.value = ''
   setOwnPubkey('no pubkey yet')
   setKeyStatus('cleared localStorage')
-  if (pushButton?.refresh) {
-    pushButton.refresh().catch(() => {})
-  }
   syncServiceWorkerKey().catch(() => {})
 })
 sendPushButton.addEventListener('click', async () => {
-  const targetPubKey = getTargetPubKey()
+  const targetPubKey = targetPubkeyInput?.value.trim()
   if (!targetPubKey) {
     sendStatus.textContent = 'no target pubkey set'
     return
@@ -518,7 +190,6 @@ sendPushButton.addEventListener('click', async () => {
       to: targetPubKey,
       ts: Date.now(),
       body,
-      url: buildShareUrl(fromPubKey),
     }
     const payloadText = JSON.stringify(payload)
     const targetBox = encryptMessage(payloadText, targetPubKey)
@@ -545,21 +216,6 @@ sendPushButton.addEventListener('click', async () => {
   }
 })
 window.addEventListener('hashchange', updateView)
-qrToggle.addEventListener('click', (event) => {
-  event.preventDefault()
-  const targetPubKey = getTargetPubKey()
-  if (!targetPubKey) return
-  const isOpen = !!qrContainer
-  if (isOpen) {
-    qrContainer.remove()
-    qrContainer = null
-    qrToggle.setAttribute('aria-expanded', 'false')
-  } else {
-    ensureQrCanvas(buildShareUrl(targetPubKey))
-    openQr()
-    qrToggle.setAttribute('aria-expanded', 'true')
-  }
-})
 loadStoredKeys()
 updateView()
 
@@ -569,29 +225,14 @@ pushButton = notificationsButton({
   className: 'icon-link',
   iconOn: 'notifications_active',
   iconOff: 'notifications',
+  buttonEl: pushMount,
   serviceWorkerUrl: '/sw.js',
   vapidKeyUrl: '/vapid-public-key',
   subscribeUrl: '/subscribe',
   unsubscribeUrl: '/unsubscribe',
   titleOn: 'Notifications on',
   titleOff: 'Notifications off',
-  getUserPubKey: () => {
-    const publicKey = getStoredPublicKey()
-    if (!publicKey) throw new Error('Generate a keypair first')
-    return publicKey
-  },
-  signChallenge: async (challenge) => {
-    const combined = getStoredKeypair()
-    if (!combined) throw new Error('Generate a keypair first')
-    return await an.sign(challenge, combined)
-  },
-  welcomeTitle: 'Welcome to Inproto',
-  welcomeBody: 'Notifications are on.',
-  goodbyeTitle: 'Notifications off',
-  goodbyeBody: 'Notifications are off.',
   onStatus: (text) => {
     if (notificationsStatus) notificationsStatus.textContent = text || ''
   },
 })
-
-if (pushMount) pushMount.appendChild(pushButton)
