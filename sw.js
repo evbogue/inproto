@@ -113,6 +113,7 @@ self.addEventListener('push', (event) => {
     const message = decryptPayload(payload, curveSecret)
     if (!message || typeof message !== 'object') return
     if (typeof message.body !== 'string' || !message.body.trim()) return
+    if (message.body.trim() === 'undefined') return
 
     const senderPubkey = typeof message.from === 'string' ? message.from : payload.from
     const title = senderPubkey || 'Inproto'
@@ -120,7 +121,7 @@ self.addEventListener('push', (event) => {
     const targetUrl = typeof message.url === 'string' ? message.url : '/'
     const options = {
       body,
-      data: { url: targetUrl },
+      data: { url: targetUrl, message },
       icon: payload.icon || '/dovepurple_sm.png',
     }
 
