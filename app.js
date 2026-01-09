@@ -91,6 +91,15 @@ async function syncServiceWorkerKey() {
   })
 }
 
+async function refreshServiceWorker() {
+  if (!('serviceWorker' in navigator)) return
+  const registration = await navigator.serviceWorker.register('/sw.js', {
+    type: 'module',
+    updateViaCache: 'none',
+  }).catch(() => null)
+  if (registration) await registration.update().catch(() => {})
+}
+
 function formatRelativeTime(tsValue) {
   const ts = Number(tsValue)
   if (!Number.isFinite(ts)) return 'unknown time'
@@ -453,6 +462,7 @@ qrToggle.addEventListener('click', (event) => {
     qrToggle.setAttribute('aria-expanded', 'true')
   }
 })
+refreshServiceWorker().catch(() => {})
 loadStoredKeys()
 updateView()
 
