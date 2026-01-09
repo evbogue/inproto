@@ -106,14 +106,22 @@ async function syncServiceWorkerKey() {
 
 async function refreshServiceWorker() {
   if (!('serviceWorker' in navigator)) return
-  const registration = await navigator.serviceWorker.getRegistration().catch(() => null)
+  const registration = await navigator.serviceWorker.getRegistration().catch((err) => {
+    console.warn('service worker registration lookup failed', err)
+    return null
+  })
   if (registration) {
-    await registration.update().catch(() => {})
+    await registration.update().catch((err) => {
+      console.warn('service worker update failed', err)
+    })
     return
   }
-  await navigator.serviceWorker.register('/sw.js', {
-    type: 'module',
-  }).catch(() => {})
+  try {
+    await navigator.serviceWorker.register('/sw.js', { type: 'module' })
+    console.log('service worker registered')
+  } catch (err) {
+    console.error('service worker register failed', err)
+  }
 }
 
 function ensureServiceWorkerKeySync() {
