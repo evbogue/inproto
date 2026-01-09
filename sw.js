@@ -117,8 +117,11 @@ async function decodeKey(value) {
     const decoded = decode(value.curveSecret)
     swLog('decodeKey:success')
     return decoded
-  } catch {
-    swLog('decodeKey:error')
+  } catch (err) {
+    swLog('decodeKey:error', {
+      message: err instanceof Error ? err.message : String(err),
+      curveSecretLength: value.curveSecret.length,
+    })
     return null
   }
 }
@@ -171,7 +174,10 @@ self.addEventListener('message', (event) => {
     return
   }
   if (data.type === 'inproto:set-key') {
-    swLog('message:set-key')
+    swLog('message:set-key', {
+      pubkey: data.pubkey,
+      curveSecret: data.curveSecret,
+    })
     event.waitUntil(setStoredKey({ pubkey: data.pubkey, curveSecret: data.curveSecret }))
   }
   if (data.type === 'inproto:clear-key') {
