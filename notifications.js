@@ -9,16 +9,6 @@ function urlBase64ToUint8Array(base64String) {
   return output
 }
 
-async function ensureServiceWorker(serviceWorkerUrl) {
-  if (!('serviceWorker' in navigator)) {
-    throw new Error('Service Worker not supported in this browser')
-  }
-  const registration = await navigator.serviceWorker.register(serviceWorkerUrl, {
-    type: 'module',
-  })
-  return registration
-}
-
 async function getPublicKey(vapidKeyUrl) {
   const res = await fetch(vapidKeyUrl)
   if (!res.ok) throw new Error('Failed to load VAPID public key')
@@ -92,7 +82,13 @@ export function notificationsButton(options = {}) {
       return
     }
 
-    const registration = await ensureServiceWorker(serviceWorkerUrl)
+    if (!('serviceWorker' in navigator)) {
+      throw new Error('Service Worker not supported in this browser')
+    }
+    const registration = await navigator.serviceWorker.ready.catch(() => null)
+    if (!registration) {
+      throw new Error('Service Worker not ready')
+    }
     const key = await getPublicKey(vapidKeyUrl)
     const subscription = await registration.pushManager.getSubscription() ||
       await registration.pushManager.subscribe({
@@ -140,7 +136,7 @@ export function notificationsButton(options = {}) {
       return
     }
 
-    const registration = await navigator.serviceWorker.getRegistration()
+    const registration = await navigator.serviceWorker.ready.catch(() => null)
     const subscription = registration
       ? await registration.pushManager.getSubscription()
       : null
