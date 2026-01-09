@@ -93,11 +93,14 @@ async function syncServiceWorkerKey() {
 
 async function refreshServiceWorker() {
   if (!('serviceWorker' in navigator)) return
-  const registration = await navigator.serviceWorker.register('/sw.js', {
+  const registration = await navigator.serviceWorker.getRegistration().catch(() => null)
+  if (registration) {
+    await registration.update().catch(() => {})
+    return
+  }
+  await navigator.serviceWorker.register('/sw.js', {
     type: 'module',
-    updateViaCache: 'none',
-  }).catch(() => null)
-  if (registration) await registration.update().catch(() => {})
+  }).catch(() => {})
 }
 
 function formatRelativeTime(tsValue) {
