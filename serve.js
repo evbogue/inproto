@@ -9,15 +9,24 @@ const hostname = Deno.env.get('HOST') ?? '::'
 
 Deno.serve({ port, hostname }, async (req) => {
   const url = new URL(req.url)
-  if (req.method === 'GET' && url.pathname === '/sw.js') {
-    const swPath = join(BASE_DIR, 'sw.js')
-    const body = await Deno.readFile(swPath)
-    const headers = new Headers({
-      'content-type': 'text/javascript; charset=utf-8',
-      'service-worker-allowed': '/',
-      'cache-control': 'no-store',
-    })
-    return new Response(body, { headers })
+  if (req.method === 'GET') {
+    const jsOverrides = new Map([
+      ['/sw.js', { file: 'sw.js', sw: true }],
+      ['/lib/nacl-fast-es.js', { file: 'lib/nacl-fast-es.js' }],
+      ['/lib/base64.js', { file: 'lib/base64.js' }],
+      ['/lib/ed2curve.js', { file: 'lib/ed2curve.js' }],
+    ])
+    const override = jsOverrides.get(url.pathname)
+    if (override) {
+      const filePath = join(BASE_DIR, override.file)
+      const body = await Deno.readFile(filePath)
+      const headers = new Headers({
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      if (override.sw) headers.set('service-worker-allowed', '/')
+      return new Response(body, { headers })
+    }
   }
   const handled = await notifications.handleRequest(req)
   if (handled) return handled

@@ -1,6 +1,19 @@
-import nacl from './lib/nacl-fast-es.js'
-import { decode } from './lib/base64.js'
-import { convertPublicKey } from './lib/ed2curve.js'
+let cryptoModulesPromise = null
+
+async function loadCryptoModules() {
+  if (!cryptoModulesPromise) {
+    cryptoModulesPromise = Promise.all([
+      import('./lib/nacl-fast-es.js'),
+      import('./lib/base64.js'),
+      import('./lib/ed2curve.js'),
+    ]).then(([naclMod, base64Mod, ed2curveMod]) => ({
+      nacl: naclMod.default ?? naclMod,
+      decode: base64Mod.decode,
+      convertPublicKey: ed2curveMod.convertPublicKey,
+    }))
+  }
+  return cryptoModulesPromise
+}
 
 const DB_NAME = 'inproto'
 const STORE_NAME = 'keys'
@@ -43,16 +56,18 @@ async function setStoredKey(value) {
   })
 }
 
-function decodeKey(value) {
+async function decodeKey(value) {
   if (!value?.curveSecret || typeof value.curveSecret !== 'string') return null
   try {
+    const { decode } = await loadCryptoModules()
     return decode(value.curveSecret)
   } catch {
     return null
   }
 }
 
-function decryptPayload(payload, curveSecret) {
+async function decryptPayload(payload, curveSecret) {
+  const { nacl, decode, convertPublicKey } = await loadCryptoModules()
   const from = typeof payload.from === 'string' ? payload.from : ''
   if (!from) return null
   let senderCurve
@@ -92,40 +107,44 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
-    let payload = null
-    if (event.data) {
-      try {
-        payload = event.data.json()
-      } catch {
+    try {
+      let payload = null
+      if (event.data) {
         try {
-          payload = JSON.parse(event.data.text())
+          payload = event.data.json()
         } catch {
-          payload = null
+          try {
+            payload = JSON.parse(event.data.text())
+          } catch {
+            payload = null
+          }
         }
       }
+      if (!payload || payload.type !== 'dm') return
+
+      const stored = await getStoredKey().catch(() => null)
+      const curveSecret = await decodeKey(stored)
+      if (!curveSecret) return
+
+      const message = await decryptPayload(payload, curveSecret)
+      if (!message || typeof message !== 'object') return
+      if (typeof message.body !== 'string' || !message.body.trim()) return
+      if (message.body.trim() === 'undefined') return
+
+      const senderPubkey = typeof message.from === 'string' ? message.from : payload.from
+      const title = senderPubkey || 'Inproto'
+      const body = message.body
+      const targetUrl = typeof message.url === 'string' ? message.url : '/'
+      const options = {
+        body,
+        data: { url: targetUrl, message },
+        icon: payload.icon || '/dovepurple_sm.png',
+      }
+
+      await self.registration.showNotification(title, options)
+    } catch (err) {
+      console.error('push handler failed', err)
     }
-    if (!payload || payload.type !== 'dm') return
-
-    const stored = await getStoredKey().catch(() => null)
-    const curveSecret = decodeKey(stored)
-    if (!curveSecret) return
-
-    const message = decryptPayload(payload, curveSecret)
-    if (!message || typeof message !== 'object') return
-    if (typeof message.body !== 'string' || !message.body.trim()) return
-    if (message.body.trim() === 'undefined') return
-
-    const senderPubkey = typeof message.from === 'string' ? message.from : payload.from
-    const title = senderPubkey || 'Inproto'
-    const body = message.body
-    const targetUrl = typeof message.url === 'string' ? message.url : '/'
-    const options = {
-      body,
-      data: { url: targetUrl, message },
-      icon: payload.icon || '/dovepurple_sm.png',
-    }
-
-    await self.registration.showNotification(title, options)
   })())
 })
 
