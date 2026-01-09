@@ -13,6 +13,7 @@ const DEFAULTS = {
   configFile: join(BASE_DIR, 'config.json'),
   vapidSubject: 'mailto:ops@wiredove.net',
   pushIconUrl: '/dovepurple_sm.png',
+  maxMessages: 1000,
 }
 
 async function readJsonFile(path, fallback) {
@@ -144,6 +145,7 @@ function summarizeLatest(record) {
 }
 
 export async function createNotificationsService(options = {}) {
+  const maxMessagesEnv = Number(Deno.env.get('MAX_MESSAGES'))
   const settings = {
     latestUrl: Deno.env.get('LATEST_URL') ?? DEFAULTS.latestUrl,
     pollMs: Number(Deno.env.get('POLL_MS') ?? DEFAULTS.pollMs),
@@ -153,6 +155,7 @@ export async function createNotificationsService(options = {}) {
     configFile: Deno.env.get('VAPID_CONFIG_PATH') ?? DEFAULTS.configFile,
     vapidSubject: Deno.env.get('VAPID_SUBJECT') ?? DEFAULTS.vapidSubject,
     pushIconUrl: Deno.env.get('PUSH_ICON_URL') ?? DEFAULTS.pushIconUrl,
+    maxMessages: Number.isFinite(maxMessagesEnv) ? maxMessagesEnv : DEFAULTS.maxMessages,
     ...options,
   }
 
@@ -179,6 +182,19 @@ export async function createNotificationsService(options = {}) {
 
   async function saveState(state) {
     await writeJsonFile(settings.stateFile, state)
+  }
+
+  const messageLog = []
+  function storeMessage(message) {
+    messageLog.push(message)
+    if (messageLog.length > settings.maxMessages) {
+      messageLog.splice(0, messageLog.length - settings.maxMessages)
+    }
+  }
+
+  function getMessages(filter) {
+    if (!filter) return [...messageLog]
+    return messageLog.filter(filter)
   }
 
   async function pollLatest(force = false) {
@@ -313,6 +329,20 @@ export async function createNotificationsService(options = {}) {
       return Response.json({ key: config.vapidPublicKey })
     }
 
+    if (req.method === 'GET' && url.pathname === '/messages') {
+      return Response.json({ messages: getMessages() })
+    }
+
+    if (req.method === 'GET' && url.pathname === '/messages/sent') {
+      const pubkey = url.searchParams.get('pubkey')
+      if (!pubkey) {
+        return Response.json({ error: 'missing pubkey' }, { status: 400 })
+      }
+      return Response.json({
+        messages: getMessages((item) => item.from === pubkey),
+      })
+    }
+
     if (req.method === 'POST' && url.pathname === '/subscribe') {
       const body = await req.json().catch(() => null)
       if (!body || typeof body !== 'object') {
@@ -394,11 +424,19 @@ export async function createNotificationsService(options = {}) {
         return Response.json({ error: 'invalid boxes' }, { status: 400 })
       }
 
+      const receivedAt = Date.now()
+      storeMessage({
+        from,
+        boxes: cleanBoxes,
+        receivedAt,
+      })
+
       const pushPayload = JSON.stringify({
         type: 'dm',
         from,
         boxes: cleanBoxes,
         icon: settings.pushIconUrl,
+        receivedAt,
       })
 
       const subs = await loadSubscriptions()
