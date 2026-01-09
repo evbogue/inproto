@@ -76,7 +76,10 @@ function getCurvePublicKey(pubkey) {
 
 async function syncServiceWorkerKey() {
   if (!('serviceWorker' in navigator)) return
-  const registration = await navigator.serviceWorker.ready.catch(() => null)
+  const registration = await navigator.serviceWorker.ready.catch((err) => {
+    console.warn('service worker ready failed', err)
+    return null
+  })
   if (!registration?.active) return
   const pubkey = getStoredPublicKey()
   const curveSecret = getCurveSecretKey()
@@ -84,11 +87,15 @@ async function syncServiceWorkerKey() {
     registration.active.postMessage({ type: 'inproto:clear-key' })
     return
   }
-  registration.active.postMessage({
-    type: 'inproto:set-key',
-    pubkey,
-    curveSecret: encode(curveSecret),
-  })
+  try {
+    registration.active.postMessage({
+      type: 'inproto:set-key',
+      pubkey,
+      curveSecret: encode(curveSecret),
+    })
+  } catch (err) {
+    console.warn('service worker key sync failed', err)
+  }
 }
 
 async function refreshServiceWorker() {
@@ -101,6 +108,23 @@ async function refreshServiceWorker() {
   await navigator.serviceWorker.register('/sw.js', {
     type: 'module',
   }).catch(() => {})
+}
+
+function ensureServiceWorkerKeySync() {
+  if (!('serviceWorker' in navigator)) return
+  navigator.serviceWorker.ready.then(() => {
+    syncServiceWorkerKey().catch(() => {})
+  }).catch(() => {})
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    syncServiceWorkerKey().catch(() => {})
+  })
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const data = event.data
+    if (!data || typeof data !== 'object') return
+    if (data.type === 'inproto:request-key') {
+      syncServiceWorkerKey().catch(() => {})
+    }
+  })
 }
 
 function formatRelativeTime(tsValue) {
@@ -466,6 +490,7 @@ qrToggle.addEventListener('click', (event) => {
   }
 })
 refreshServiceWorker().catch(() => {})
+ensureServiceWorkerKeySync()
 loadStoredKeys()
 updateView()
 

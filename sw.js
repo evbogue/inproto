@@ -105,6 +105,23 @@ self.addEventListener('message', (event) => {
   }
 })
 
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    if (self.clients?.claim) {
+      await self.clients.claim()
+    }
+    if (!self.clients?.matchAll) return
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of clients) {
+      try {
+        client.postMessage({ type: 'inproto:request-key' })
+      } catch {
+        continue
+      }
+    }
+  })())
+})
+
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     let payload = null
